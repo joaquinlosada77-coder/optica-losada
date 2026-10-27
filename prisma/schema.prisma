@@ -1,0 +1,215 @@
+// Fase 1: empresa, sucursales, usuarios, pacientes (RUT) y agenda.
+// Las fases siguientes (ficha optométrica, TPV, DTE SII, laboratorio, stock, CRM)
+// cuelgan de Organization / Branch / Patient.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// Empresa (titular tributario). Un despliegue puede alojar varias empresas (SaaS).
+model Organization {
+  id          String   @id @default(cuid())
+  name        String
+  rut         String   @unique // RUT empresa, formato normalizado 76123456-7
+  razonSocial String   @map("razon_social")
+  giro        String?
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  branches     Branch[]
+  users        User[]
+  patients     Patient[]
+  appointments Appointment[]
+  auditLogs    AuditLog[]
+
+  @@map("organizations")
+}
+
+model Branch {
+  id        String   @id @default(cuid())
+  orgId     String   @map("org_id")
+  code      String // código interno corto, p.ej. "PROV" (útil para folios/series)
+  name      String
+  address   String?
+  comuna    String?
+  region    String?
+  phone     String?
+  email     String?
+  // Horario base de agenda (hora local Chile, "HH:mm")
+  openTime  String   @default("10:00") @map("open_time")
+  closeTime String   @default("19:00") @map("close_time")
+  slotMinutes Int    @default(30) @map("slot_minutes")
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  org          Organization @relation(fields: [orgId], references: [id])
+  users        UserBranch[]
+  homePatients Patient[]
+  appointments Appointment[]
+
+  @@unique([orgId, code])
+  @@index([orgId])
+  @@map("branches")
+}
+
+enum Role {
+  ADMIN // dueño / gerente: todo, todas las sucursales
+  OPTOMETRA // agenda propia, ficha clínica (fase 2)
+  VENDEDOR // pacientes, ventas (fase 3)
+  RECEPCION // pacientes y agenda
+}
+
+model User {
+  id           String   @id @default(cuid())
+  orgId        String   @map("org_id")
+  email        String   @unique
+  name         String
+  rut          String?
+  passwordHash String   @map("password_hash")
+  role         Role
+  // Optómetras/tecnólogos médicos atienden y aparecen como columnas en la agenda
+  isProfessional Boolean @default(false) @map("is_professional")
+  registroSis  String?  @map("registro_sis") // N° registro Superintendencia de Salud
+  active       Boolean  @default(true)
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  org          Organization  @relation(fields: [orgId], references: [id])
+  branches     UserBranch[]
+  appointments Appointment[] @relation("ProfessionalAppointments")
+  createdAppts Appointment[] @relation("CreatedAppointments")
+  auditLogs    AuditLog[]
+
+  @@index([orgId])
+  @@map("users")
+}
+
+model UserBranch {
+  userId   String @map("user_id")
+  branchId String @map("branch_id")
+
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  branch Branch @relation(fields: [branchId], references: [id], onDelete: Cascade)
+
+  @@id([userId, branchId])
+  @@map("user_branches")
+}
+
+enum Sexo {
+  F
+  M
+  OTRO
+  NO_INFORMA
+}
+
+enum Prevision {
+  FONASA
+  ISAPRE
+  CAPREDENA
+  DIPRECA
+  PARTICULAR
+  OTRA
+}
+
+// El paciente pertenece a la empresa (compartido entre sucursales);
+// homeBranch indica dónde se registró / atiende habitualmente.
+model Patient {
+  id              String     @id @default(cuid())
+  orgId           String     @map("org_id")
+  homeBranchId    String?    @map("home_branch_id")
+  rut             String? // normalizado "12345678-K"; null si es extranjero sin RUT
+  documentoExtranjero String? @map("documento_extranjero") // pasaporte u otro
+  nombres         String
+  apellidoPaterno String     @map("apellido_paterno")
+  apellidoMaterno String?    @map("apellido_materno")
+  fechaNacimiento DateTime?  @map("fecha_nacimiento") @db.Date
+  sexo            Sexo?
+  email           String?
+  telefono        String?
+  direccion       String?
+  comuna          String?
+  region          String?
+  prevision       Prevision?
+  isapre          String?
+  ocupacion       String?
+  notas           String?
+  aceptaMarketing Boolean    @default(false) @map("acepta_marketing") // Ley 19.628
+  active          Boolean    @default(true)
+  createdAt       DateTime   @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt       DateTime   @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  org          Organization  @relation(fields: [orgId], references: [id])
+  homeBranch   Branch?       @relation(fields: [homeBranchId], references: [id])
+  appointments Appointment[]
+
+  @@unique([orgId, rut])
+  @@index([orgId, apellidoPaterno])
+  @@map("patients")
+}
+
+enum AppointmentType {
+  CONTROL_VISUAL
+  ADAPTACION_LC
+  ENTREGA_LENTES
+  AJUSTE_REPARACION
+  OTRO
+}
+
+enum AppointmentStatus {
+  AGENDADA
+  CONFIRMADA
+  EN_ATENCION
+  ATENDIDA
+  NO_ASISTIO
+  CANCELADA
+}
+
+model Appointment {
+  id             String            @id @default(cuid())
+  orgId          String            @map("org_id")
+  branchId       String            @map("branch_id")
+  patientId      String?           @map("patient_id")
+  professionalId String?           @map("professional_id")
+  // Para reservas sin ficha (llamada rápida) se guarda nombre/teléfono de contacto
+  contactName    String?           @map("contact_name")
+  contactPhone   String?           @map("contact_phone")
+  startsAt       DateTime          @map("starts_at") @db.Timestamptz(3)
+  endsAt         DateTime          @map("ends_at") @db.Timestamptz(3)
+  type           AppointmentType   @default(CONTROL_VISUAL)
+  status         AppointmentStatus @default(AGENDADA)
+  notes          String?
+  createdById    String            @map("created_by_id")
+  createdAt      DateTime          @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt      DateTime          @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  org          Organization @relation(fields: [orgId], references: [id])
+  branch       Branch       @relation(fields: [branchId], references: [id])
+  patient      Patient?     @relation(fields: [patientId], references: [id])
+  professional User?        @relation("ProfessionalAppointments", fields: [professionalId], references: [id])
+  createdBy    User         @relation("CreatedAppointments", fields: [createdById], references: [id])
+
+  @@index([branchId, startsAt])
+  @@index([patientId])
+  @@map("appointments")
+}
+
+// Trazabilidad de accesos/cambios a datos sensibles (Ley 20.584 / 19.628)
+model AuditLog {
+  id        String   @id @default(cuid())
+  orgId     String   @map("org_id")
+  userId    String?  @map("user_id")
+  action    String // p.ej. "patient.create", "appointment.status"
+  entity    String
+  entityId  String   @map("entity_id")
+  data      Json?
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  org  Organization @relation(fields: [orgId], references: [id])
+  user User?        @relation(fields: [userId], references: [id])
+
+  @@index([orgId, entity, entityId])
+  @@map("audit_logs")
+}
