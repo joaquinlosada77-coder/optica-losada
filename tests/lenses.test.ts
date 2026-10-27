@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  designAvailable, fmtDiopter, isQuarterStep, maxPower, recommendedMaterialId, resolveLens,
+  designAvailable, fmtDiopter, isQuarterStep, maxPower, recommendedMaterialId, resolveLens, toggleTreatment,
   type LensCatalog, type Rx,
 } from "@/lib/lenses";
 
@@ -10,12 +10,13 @@ const mat = (id: string, from: number, max: number) => ({
 const catalog: LensCatalog = {
   materials: [mat("150", 0, 4), mat("159", 2, 6), mat("167", 4.5, 10), mat("174", 7, 14)],
   designs: [
-    { id: "MONO", code: "MONO", name: "Monofocal", description: null, requiresAdd: false },
-    { id: "PROG", code: "PROG", name: "Progresivo", description: null, requiresAdd: true },
+    { id: "MONO", code: "MONO", name: "Monofocal", description: null, family: "MONOFOCAL", requiresAdd: false },
+    { id: "PROG", code: "PROG", name: "Progresivo", description: null, family: "PROGRESIVO", requiresAdd: true },
   ],
   treatments: [
-    { id: "AR", code: "AR", name: "Antirreflejo", description: null, price: 20000 },
-    { id: "BLUE", code: "BLUE", name: "Filtro azul", description: null, price: 25000 },
+    { id: "AR", code: "AR", name: "Antirreflejo", description: null, exclusiveGroup: "AR", price: 20000 },
+    { id: "BLUE", code: "BLUE", name: "Filtro azul", description: null, exclusiveGroup: null, price: 25000 },
+    { id: "ARTOP", code: "ARTOP", name: "AR Top", description: null, exclusiveGroup: "AR", price: 35000 },
   ],
   prices: {
     "150": { MONO: 30000 },
@@ -49,7 +50,7 @@ describe("configurador de cristales", () => {
     const r = resolveLens(catalog, { materialId: "167", designId: "PROG", treatmentIds: ["BLUE", "AR"] }, rx({ odSph: -5, odAdd: 2 }));
     expect(r).toEqual({
       code: "167-PROG-AR-BLUE",
-      description: "Cristales Progresivo Mat 167 + Antirreflejo + Filtro azul",
+      description: "Cristales Progresivo 167 + Antirreflejo + Filtro azul",
       price: 180000 + 20000 + 25000,
     });
   });
@@ -58,6 +59,13 @@ describe("configurador de cristales", () => {
     expect(resolveLens(catalog, { materialId: "150", designId: "MONO", treatmentIds: [] }, rx({ odSph: -6 }))).toHaveProperty("error");
     expect(resolveLens(catalog, { materialId: "174", designId: "PROG", treatmentIds: [] }, rx({ odSph: -8, odAdd: 2 }))).toHaveProperty("error");
     expect(resolveLens(catalog, { materialId: "159", designId: "MONO", treatmentIds: ["X"] }, null)).toHaveProperty("error");
+  });
+
+  it("tratamientos del mismo grupo se excluyen", () => {
+    const t = catalog.treatments;
+    expect(toggleTreatment(t, ["AR", "BLUE"], "ARTOP")).toEqual(["BLUE", "ARTOP"]);
+    expect(toggleTreatment(t, ["ARTOP"], "ARTOP")).toEqual([]);
+    expect(resolveLens(catalog, { materialId: "159", designId: "MONO", treatmentIds: ["AR", "ARTOP"] }, null)).toHaveProperty("error");
   });
 
   it("formatea dioptrías", () => {

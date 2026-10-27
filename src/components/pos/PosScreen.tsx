@@ -7,6 +7,7 @@ import { applyCash, formatCLP, lineTotal, percentOf, saleTotals } from "@/lib/mo
 import type { LensCatalog } from "@/lib/lenses";
 import type { RxSummary } from "@/server/lenses";
 import { createSale, type SaleInput } from "@/server/sales";
+import { PAYMENT_METHOD_LABEL } from "@/lib/labels";
 import { cx } from "@/components/ui";
 import { Keypad } from "./Keypad";
 import { LensConfigurator, type ConfiguredLens } from "./LensConfigurator";
@@ -31,9 +32,7 @@ const TABS: { key: "FAV" | ProductType; label: string }[] = [
   { key: "SERVICIO", label: "Servicios" },
 ];
 
-const METHOD_LABEL: Record<PaymentMethod, string> = {
-  EFECTIVO: "Efectivo", DEBITO: "Débito", CREDITO: "Crédito", TRANSFERENCIA: "Transferencia", OTRO: "Otro",
-};
+const METHOD_LABEL = PAYMENT_METHOD_LABEL;
 
 let keySeq = 0;
 const newKey = () => `l${++keySeq}`;
@@ -398,9 +397,9 @@ function PaymentDialog({ total, cashOpen, onSubmit, onCancel }: {
             </p>
           ) : (
             <>
-              <div className="mb-3 grid grid-cols-2 gap-2">
+              <div className="mb-3 grid grid-cols-3 gap-2">
                 {(Object.keys(METHOD_LABEL) as PaymentMethod[]).map((m) => (
-                  <button key={m} onClick={() => setMethod(m)} className={cx("h-14 rounded-xl text-base font-medium active:scale-95", method === m ? "bg-slate-900 text-white" : "border border-slate-300")}>
+                  <button key={m} onClick={() => setMethod(m)} className={cx("h-14 rounded-xl px-1 text-sm font-medium leading-tight active:scale-95", method === m ? "bg-slate-900 text-white" : "border border-slate-300")}>
                     {METHOD_LABEL[m]}
                   </button>
                 ))}

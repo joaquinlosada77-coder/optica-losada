@@ -3,8 +3,8 @@
 import { useMemo, useState } from "react";
 import { formatCLP } from "@/lib/money";
 import {
-  designAvailable, fmtDiopter, fromPrice, materialAvailable, recommendedMaterialId, resolveLens,
-  type LensCatalog, type LensSelection,
+  FAMILY_LABEL, designAvailable, fmtDiopter, fromPrice, materialAvailable, recommendedMaterialId, resolveLens, toggleTreatment,
+  type LensCatalog, type LensFamilyKey, type LensSelection,
 } from "@/lib/lenses";
 import type { RxSummary } from "@/server/lenses";
 import { cx } from "@/components/ui";
@@ -54,8 +54,8 @@ export function LensConfigurator({
     (material && designId ? (catalog.prices[material.id]?.[designId] ?? 0) : material ? (fromPrice(catalog, material.id) ?? 0) : 0) +
     catalog.treatments.filter((t) => treatmentIds.includes(t.id)).reduce((s, t) => s + t.price, 0);
 
-  const toggleTreatment = (id: string) =>
-    setTreatmentIds((ids) => (ids.includes(id) ? ids.filter((x) => x !== id) : [...ids, id]));
+  const toggle = (id: string) => setTreatmentIds((ids) => toggleTreatment(catalog.treatments, ids, id));
+  const families = (Object.keys(FAMILY_LABEL) as LensFamilyKey[]).filter((f) => catalog.designs.some((d) => d.family === f));
 
   return (
     <div className="fixed inset-0 z-50 flex flex-col bg-slate-50">
@@ -114,6 +114,7 @@ export function LensConfigurator({
               return (
                 <button
                   key={m.id}
+                  data-code={m.code}
                   disabled={!ok || price === null}
                   onClick={() => { setMaterialId(m.id); setDesignId(null); setStep(1); }}
                   className={cx(
@@ -145,7 +146,8 @@ export function LensConfigurator({
                 return (
                   <button
                     key={t.id}
-                    onClick={() => toggleTreatment(t.id)}
+                    data-code={t.code}
+                    onClick={() => toggle(t.id)}
                     aria-pressed={on}
                     className={cx(
                       "flex items-start gap-4 rounded-2xl border-2 bg-white p-5 text-left shadow-sm active:scale-[0.98]",
@@ -154,7 +156,10 @@ export function LensConfigurator({
                   >
                     <span className={cx("mt-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border-2 text-lg", on ? "border-brand-600 bg-brand-600 text-white" : "border-slate-300")}>{on ? "✓" : ""}</span>
                     <span className="flex-1">
-                      <span className="block text-lg font-semibold">{t.name}</span>
+                      <span className="block text-lg font-semibold">
+                        {t.name}
+                        {t.exclusiveGroup && <span className="ml-2 align-middle text-xs font-normal text-slate-400">elige uno de este tipo</span>}
+                      </span>
                       {t.description && <span className="block text-sm text-slate-600">{t.description}</span>}
                       <span className="mt-2 block text-base font-semibold text-brand-700">+ {formatCLP(t.price)}</span>
                     </span>
@@ -171,29 +176,40 @@ export function LensConfigurator({
         )}
 
         {step === 2 && material && (
-          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-            {catalog.designs.map((d) => {
-              const base = catalog.prices[material.id]?.[d.id];
-              const ok = designAvailable(d, rx) && base !== undefined;
-              const selected = designId === d.id;
+          <div className="space-y-6">
+            {families.map((f) => {
+              const designs = catalog.designs.filter((d) => d.family === f);
               return (
-                <button
-                  key={d.id}
-                  disabled={!ok}
-                  onClick={() => setDesignId(d.id)}
-                  className={cx(
-                    "flex flex-col items-start gap-2 rounded-2xl border-2 bg-white p-5 text-left shadow-sm active:scale-[0.98] disabled:opacity-40",
-                    selected ? "border-brand-600 ring-4 ring-brand-100" : "border-slate-200",
-                  )}
-                >
-                  <div className="text-xl font-semibold">{d.name}</div>
-                  {d.description && <p className="text-sm text-slate-600">{d.description}</p>}
-                  <div className="mt-auto pt-2 text-base">
-                    {base === undefined ? <span className="text-slate-500">No disponible en {material.refractiveIndex}</span>
-                      : !designAvailable(d, rx) ? <span className="text-rose-600">La receta no tiene adición</span>
-                      : <b className="text-xl">{formatCLP(base)}</b>}
+                <section key={f}>
+                  <h3 className="mb-3 text-lg font-semibold text-slate-700">{FAMILY_LABEL[f]}</h3>
+                  <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+                    {designs.map((d) => {
+                      const base = catalog.prices[material.id]?.[d.id];
+                      const ok = designAvailable(d, rx) && base !== undefined;
+                      const selected = designId === d.id;
+                      return (
+                        <button
+                          key={d.id}
+                          data-code={d.code}
+                          disabled={!ok}
+                          onClick={() => setDesignId(d.id)}
+                          className={cx(
+                            "flex flex-col items-start gap-2 rounded-2xl border-2 bg-white p-5 text-left shadow-sm active:scale-[0.98] disabled:opacity-40",
+                            selected ? "border-brand-600 ring-4 ring-brand-100" : "border-slate-200",
+                          )}
+                        >
+                          <div className="text-xl font-semibold">{d.name}</div>
+                          {d.description && <p className="text-sm text-slate-600">{d.description}</p>}
+                          <div className="mt-auto pt-2 text-base">
+                            {base === undefined ? <span className="text-slate-500">No disponible en {material.refractiveIndex}</span>
+                              : !designAvailable(d, rx) ? <span className="text-rose-600">La receta no tiene adición</span>
+                              : <b className="text-xl">{formatCLP(base)}</b>}
+                          </div>
+                        </button>
+                      );
+                    })}
                   </div>
-                </button>
+                </section>
               );
             })}
           </div>

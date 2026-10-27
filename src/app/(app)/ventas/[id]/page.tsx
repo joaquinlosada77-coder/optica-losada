@@ -9,6 +9,7 @@ import { PAYMENT_METHOD_LABEL, SALE_STATUS_LABEL, SALE_STATUS_STYLE } from "@/li
 import { requireContext } from "@/server/auth";
 import { patientFullName } from "@/server/queries";
 import { PaymentBox, PrintButton, VoidButton } from "@/components/sales/SaleActions";
+import { WorkStatusBar } from "@/components/sales/WorkStatusBar";
 import { Alert, Badge, Card, PageHeader } from "@/components/ui";
 
 type LensRx = { odSph: number; odCyl: number; odAxis: number | null; odAdd: number | null; oiSph: number; oiCyl: number; oiAxis: number | null; oiAdd: number | null } | null;
@@ -41,6 +42,12 @@ export default async function SalePage({ params }: { params: Promise<{ id: strin
         />
       </div>
       {sale.status === "ANULADA" && <div className="mb-4"><Alert>Venta anulada: {sale.voidReason}</Alert></div>}
+      {sale.status !== "ANULADA" && (
+        <Card title="Estado del trabajo" className="mb-6 print:hidden">
+          <WorkStatusBar saleId={sale.id} status={sale.workStatus} balance={balance} />
+          {sale.deliveredAt && <p className="mt-2 text-xs text-slate-500">Entregado el {fmtDateTime(sale.deliveredAt)}</p>}
+        </Card>
+      )}
 
       <div className="grid gap-6 lg:grid-cols-3">
         <Card className="lg:col-span-2 print:border-0 print:shadow-none">

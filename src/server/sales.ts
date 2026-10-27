@@ -1,6 +1,6 @@
 "use server";
 
-import { Prisma } from "@prisma/client";
+import { PaymentMethod, Prisma, WorkStatus } from "@prisma/client";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { prisma } from "@/lib/db";
@@ -9,7 +9,6 @@ import { resolveLens } from "@/lib/lenses";
 import { audit, requireContext } from "@/server/auth";
 import { loadLensCatalog } from "@/server/lenses";
 
-const METHODS = ["EFECTIVO", "DEBITO", "CREDITO", "TRANSFERENCIA", "OTRO"] as const;
 
 const money = z.number().int().min(0).max(100_000_000);
 
@@ -43,7 +42,7 @@ const saleInput = z.object({
     .min(1, "Agrega al menos un producto"),
   payments: z.array(
     z.object({
-      method: z.enum(METHODS),
+      method: z.enum(PaymentMethod),
       amount: money.min(1),
       reference: z.string().max(60).nullable(),
     }),
@@ -143,6 +142,9 @@ export async function createSale(input: SaleInput): Promise<Result> {
         patientId: s.patientId,
         sellerId: ctx.user.id,
         status: paid >= totals.total ? "PAGADA" : "ABIERTA",
+        // Con cristales hay trabajo de laboratorio; sin ellos la venta se entrega en el acto
+        workStatus: items.some((i) => i.lensConfig) ? "PENDIENTE" : "ENTREGADO",
+        deliveredAt: items.some((i) => i.lensConfig) ? null : new Date(),
         subtotal: totals.subtotal,
         discount: totals.discount,
         total: totals.total,
@@ -183,7 +185,7 @@ export async function createSale(input: SaleInput): Promise<Result> {
 
 const paymentInput = z.object({
   saleId: z.string(),
-  method: z.enum(METHODS),
+  method: z.enum(PaymentMethod),
   amount: money.min(1, "Ingresa un monto"),
   reference: z.string().max(60).nullable(),
 });
@@ -283,5 +285,24 @@ export async function closeCash(countedCash: number, notes: string | null): Prom
   if (res.count !== 1) return { ok: false, error: "La caja ya fue cerrada." };
   await audit(ctx, "cash.close", "cash_session", session.id, { countedCash, expectedCash, diff: countedCash - expectedCash });
   revalidatePath("/caja");
+  return { ok: true };
+}
+
+// ───────────── Estado del trabajo (OT) ─────────────
+
+export async function setWorkStatus(saleId: string, status: WorkStatus): Promise<{ ok: true } | { ok: false; error: string }> {
+  const ctx = await requireContext();
+  if (!Object.values(WorkStatus).includes(status)) return { ok: false, error: "Estado inválido" };
+  const sale = await prisma.sale.findFirst({ where: { id: saleId, orgId: ctx.orgId } });
+  if (!sale) return { ok: false, error: "Venta no encontrada." };
+  if (sale.status === "ANULADA") return { ok: false, error: "La venta está anulada." };
+
+  await prisma.sale.update({
+    where: { id: saleId },
+    data: { workStatus: status, deliveredAt: status === "ENTREGADO" ? new Date() : null },
+  });
+  await audit(ctx, "sale.work_status", "sale", saleId, { from: sale.workStatus, to: status });
+  revalidatePath(`/ventas/${saleId}`);
+  revalidatePath("/ventas");
   return { ok: true };
 }

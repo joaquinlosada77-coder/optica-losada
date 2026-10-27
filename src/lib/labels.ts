@@ -70,10 +70,32 @@ export const SALE_STATUS_STYLE: Record<import("@prisma/client").SaleStatus, stri
 export const PAYMENT_METHOD_LABEL: Record<import("@prisma/client").PaymentMethod, string> = {
   EFECTIVO: "Efectivo",
   DEBITO: "Débito",
-  CREDITO: "Crédito",
+  CREDITO: "Tarjeta crédito",
   TRANSFERENCIA: "Transferencia",
+  CHEQUE: "Cheque",
+  CREDITO_INSTITUCION: "Crédito institución",
+  CONVENIO: "Convenio salud visual",
+  GARANTIA: "Garantía",
   OTRO: "Otro",
 };
+
+export const WORK_STATUS_LABEL: Record<import("@prisma/client").WorkStatus, string> = {
+  PENDIENTE: "Pendiente",
+  LABORATORIO: "En laboratorio",
+  MONTAJE: "En montaje",
+  DISPONIBLE: "Disponible para retiro",
+  ENTREGADO: "Entregado",
+};
+
+export const WORK_STATUS_STYLE: Record<import("@prisma/client").WorkStatus, string> = {
+  PENDIENTE: "border-slate-300 bg-slate-50 text-slate-700",
+  LABORATORIO: "border-violet-300 bg-violet-50 text-violet-800",
+  MONTAJE: "border-sky-300 bg-sky-50 text-sky-800",
+  DISPONIBLE: "border-emerald-400 bg-emerald-50 text-emerald-800",
+  ENTREGADO: "border-slate-200 bg-white text-slate-500",
+};
+
+export const WORK_STATUS_FLOW: import("@prisma/client").WorkStatus[] = ["PENDIENTE", "LABORATORIO", "MONTAJE", "DISPONIBLE", "ENTREGADO"];
 
 export const PRODUCT_TYPE_LABEL: Record<import("@prisma/client").ProductType, string> = {
   ARMAZON: "Armazón",

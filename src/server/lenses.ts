@@ -25,8 +25,10 @@ export async function loadLensCatalog(orgId: string): Promise<LensCatalog> {
       recommendFromPower: m.recommendFromPower,
       maxPower: m.maxPower,
     })),
-    designs: designs.map((d) => ({ id: d.id, code: d.code, name: d.name, description: d.description, requiresAdd: d.requiresAdd })),
-    treatments: treatments.map((t) => ({ id: t.id, code: t.code, name: t.name, description: t.description, price: t.price })),
+    designs: designs.map((d) => ({ id: d.id, code: d.code, name: d.name, description: d.description, family: d.family, requiresAdd: d.requiresAdd })),
+    treatments: treatments.map((t) => ({
+      id: t.id, code: t.code, name: t.name, description: t.description, exclusiveGroup: t.exclusiveGroup, price: t.price,
+    })),
     prices,
   };
 }

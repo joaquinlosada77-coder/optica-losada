@@ -285,6 +285,8 @@ model Sale {
   total        Int
   paid         Int        @default(0)
   deliveryDate DateTime?  @map("delivery_date") @db.Date // fecha promesa de entrega
+  workStatus   WorkStatus @default(ENTREGADO) @map("work_status")
+  deliveredAt  DateTime?  @map("delivered_at") @db.Timestamptz(3)
   notes        String?
   voidReason   String?    @map("void_reason")
   createdAt    DateTime   @default(now()) @map("created_at") @db.Timestamptz(3)
@@ -324,9 +326,22 @@ model SaleItem {
 enum PaymentMethod {
   EFECTIVO
   DEBITO
-  CREDITO
+  CREDITO // tarjeta de crédito
   TRANSFERENCIA
+  CHEQUE
+  CREDITO_INSTITUCION
+  CONVENIO // convenio de salud visual
+  GARANTIA
   OTRO
+}
+
+// Estado del trabajo (OT) de la venta, independiente del pago
+enum WorkStatus {
+  PENDIENTE // venta con cristales aún no enviada
+  LABORATORIO
+  MONTAJE
+  DISPONIBLE // listo para retiro: avisar al cliente
+  ENTREGADO
 }
 
 // Cada pago/abono queda en la caja abierta de la sucursal donde se cobró
@@ -425,16 +440,24 @@ model LensMaterial {
   @@map("lens_materials")
 }
 
-// Tipo / diseño: monofocal, bifocal, progresivo, ocupacional
+enum LensFamily {
+  MONOFOCAL
+  BIFOCAL
+  PROGRESIVO
+  OCUPACIONAL
+}
+
+// Tipo / gama: Monofocal Básico, Progresivo Intermedio, Progresivo Personalizado…
 model LensDesign {
-  id          String  @id @default(cuid())
-  orgId       String  @map("org_id")
+  id          String     @id @default(cuid())
+  orgId       String     @map("org_id")
   code        String
   name        String
   description String?
-  requiresAdd Boolean @default(false) @map("requires_add") // necesita adición en la receta
-  sortOrder   Int     @default(0) @map("sort_order")
-  active      Boolean @default(true)
+  family      LensFamily @default(MONOFOCAL) // agrupa las gamas en la pantalla del cliente
+  requiresAdd Boolean    @default(false) @map("requires_add") // necesita adición en la receta
+  sortOrder   Int        @default(0) @map("sort_order")
+  active      Boolean    @default(true)
 
   org    Organization @relation(fields: [orgId], references: [id])
   prices LensPrice[]
@@ -445,14 +468,15 @@ model LensDesign {
 
 // Filtros y tratamientos con recargo fijo por par
 model LensTreatment {
-  id          String  @id @default(cuid())
-  orgId       String  @map("org_id")
-  code        String
-  name        String
-  description String?
-  price       Int // recargo por par, CLP IVA incluido
-  sortOrder   Int     @default(0) @map("sort_order")
-  active      Boolean @default(true)
+  id             String  @id @default(cuid())
+  orgId          String  @map("org_id")
+  code           String
+  name           String
+  description    String?
+  exclusiveGroup String? @map("exclusive_group") // misma letra = se excluyen (AR / AR TOP / AR TOP P)
+  price          Int // recargo por par, CLP IVA incluido
+  sortOrder      Int     @default(0) @map("sort_order")
+  active         Boolean @default(true)
 
   org Organization @relation(fields: [orgId], references: [id])
 

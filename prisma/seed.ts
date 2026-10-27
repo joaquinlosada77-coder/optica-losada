@@ -78,13 +78,20 @@ async function main() {
 
 // Catálogo de ventas y configurador de cristales (precios referenciales CLP con IVA)
 async function seedSalesCatalog(orgId: string) {
-  if (await prisma.lensMaterial.count({ where: { orgId } })) return;
+  if (!(await prisma.lensMaterial.count({ where: { orgId } }))) await seedLensCatalog(orgId);
+  if (!(await prisma.product.count({ where: { orgId } }))) await seedProducts(orgId);
+  if (!(await prisma.prescription.count({ where: { orgId } }))) await seedPrescriptions(orgId);
+}
 
+async function seedLensCatalog(orgId: string) {
+
+  // Estructura tomada de la configuración real en Gesvision (gamas, tratamientos, índices). Precios de ejemplo.
   const materials = await Promise.all(
     ([
-      ["CR39", "Orgánico CR-39", "1.50", "Excelente calidad óptica a buen precio. Ideal para graduaciones bajas.", 1, 0, 4, 10],
-      ["POLI", "Policarbonato", "1.59", "Resiste impactos: ideal para niños y deporte. Más delgado que el CR-39.", 2, 2, 6, 20],
-      ["161", "Alto índice 1.61", "1.61", "Hasta 25% más delgado y liviano.", 3, 3, 7, 30],
+      ["150", "Orgánico CR-39", "1.50", "Excelente calidad óptica a buen precio. Ideal para graduaciones bajas.", 1, 0, 4, 10],
+      ["156", "Índice medio 1.56", "1.56", "Algo más delgado que el CR-39, a precio conveniente.", 2, 1.5, 5, 15],
+      ["159", "Policarbonato", "1.59", "Resiste impactos: ideal para niños y deporte.", 2, 2, 6, 20],
+      ["160", "Alto índice 1.60", "1.60", "Hasta 25% más delgado y liviano.", 3, 3, 8, 30],
       ["167", "Alto índice 1.67", "1.67", "Hasta 35% más delgado. Recomendado desde ±4,50.", 4, 4.5, 10, 40],
       ["174", "Ultra delgado 1.74", "1.74", "El más delgado disponible, para graduaciones altas.", 5, 7, 14, 50],
     ] as const).map(([code, name, refractiveIndex, description, thinness, recommendFromPower, maxPower, sortOrder]) =>
@@ -93,29 +100,39 @@ async function seedSalesCatalog(orgId: string) {
   );
   const designs = await Promise.all(
     ([
-      ["MONO", "Monofocal", "Una sola graduación: lejos o cerca.", false, 10],
-      ["BIF", "Bifocal", "Lejos y cerca, con línea visible.", true, 20],
-      ["PROG", "Progresivo", "Lejos, intermedio y cerca sin líneas.", true, 30],
-      ["OCUP", "Ocupacional", "Para computador y oficina: intermedio y cerca.", true, 40],
-    ] as const).map(([code, name, description, requiresAdd, sortOrder]) =>
-      prisma.lensDesign.create({ data: { orgId, code, name, description, requiresAdd, sortOrder } }),
+      ["MONBAS", "Monofocal Básico", "Una graduación, lejos o cerca.", "MONOFOCAL", false, 10],
+      ["MONDIG", "Monofocal Digital", "Tallado digital: más nitidez en los bordes.", "MONOFOCAL", false, 20],
+      ["BIF", "Bifocal", "Lejos y cerca, con línea visible.", "BIFOCAL", true, 30],
+      ["PROGBAS", "Progresivo Básico", "Lejos, intermedio y cerca sin líneas.", "PROGRESIVO", true, 40],
+      ["PROGINT", "Progresivo Intermedio", "Campos de visión más amplios y adaptación más fácil.", "PROGRESIVO", true, 50],
+      ["PROGPER", "Progresivo Personalizado", "Diseñado a tu medida: máxima comodidad.", "PROGRESIVO", true, 60],
+      ["OCUP", "Ocupacional", "Para computador y oficina: intermedio y cerca.", "OCUPACIONAL", true, 70],
+    ] as const).map(([code, name, description, family, requiresAdd, sortOrder]) =>
+      prisma.lensDesign.create({ data: { orgId, code, name, description, family, requiresAdd, sortOrder } }),
     ),
   );
   await prisma.lensTreatment.createMany({
     data: ([
-      ["AR", "Antirreflejo", "Elimina reflejos y mejora la visión nocturna.", 25000, 10],
-      ["BLUE", "Filtro luz azul", "Protege de pantallas y reduce la fatiga visual.", 30000, 20],
-      ["FOTO", "Fotocromático", "Se oscurece al sol y se aclara en interiores.", 45000, 30],
-      ["POL", "Polarizado", "Elimina el encandilamiento: ideal para conducir.", 50000, 40],
-      ["END", "Endurecido", "Mayor resistencia a rayas.", 10000, 50],
-    ] as const).map(([code, name, description, price, sortOrder]) => ({ orgId, code, name, description, price, sortOrder })),
+      ["AR", "Antirreflejo", "Elimina reflejos y mejora la visión nocturna.", "AR", 20000, 10],
+      ["ARTOP", "AR Top", "Antirreflejo premium, más fácil de limpiar.", "AR", 35000, 20],
+      ["ARTOPP", "AR Top P", "AR Top con protección extra.", "AR", 45000, 30],
+      ["ARTOPPP", "AR Top P+", "La máxima protección y durabilidad.", "AR", 55000, 40],
+      ["DURA", "DuraVision", "Antirreflejo Zeiss de alta resistencia.", "AR", 60000, 50],
+      ["BLUE", "Blue Protect", "Filtra la luz azul de pantallas y reduce la fatiga.", null, 30000, 60],
+      ["HC", "Endurecido (HC)", "Mayor resistencia a rayas.", null, 10000, 70],
+      ["DEG", "Degradado", "Color degradado para sol.", "COLOR", 25000, 80],
+      ["POLAR", "Polarizado", "Elimina el encandilamiento: ideal para conducir.", "COLOR", 50000, 90],
+    ] as const).map(([code, name, description, exclusiveGroup, price, sortOrder]) => ({ orgId, code, name, description, exclusiveGroup, price, sortOrder })),
   });
+  // Precio base del par por índice × gama (null = no disponible)
   const matrix: Record<string, (number | null)[]> = {
-    CR39: [25000, 60000, 120000, 90000],
-    POLI: [45000, 80000, 150000, 110000],
-    "161": [70000, null, 190000, 140000],
-    "167": [110000, null, 250000, 180000],
-    "174": [180000, null, 350000, null],
+    //       MONBAS  MONDIG  BIF    PROGBAS PROGINT PROGPER OCUP
+    "150": [25000, 45000, 60000, 110000, 160000, null, 90000],
+    "156": [32000, 55000, 70000, 125000, 180000, null, 100000],
+    "159": [45000, 65000, 80000, 140000, 190000, 260000, 110000],
+    "160": [60000, 80000, null, 160000, 210000, 290000, 130000],
+    "167": [95000, 120000, null, 210000, 260000, 340000, 170000],
+    "174": [160000, 190000, null, null, 330000, 420000, null],
   };
   await prisma.lensPrice.createMany({
     data: materials.flatMap((m) =>
@@ -123,6 +140,9 @@ async function seedSalesCatalog(orgId: string) {
     ),
   });
 
+}
+
+async function seedProducts(orgId: string) {
   await prisma.product.createMany({
     data: ([
       ["RB5154", "Ray-Ban Clubmaster RB5154", "Ray-Ban", "ARMAZON", 89990, true],
@@ -142,6 +162,9 @@ async function seedSalesCatalog(orgId: string) {
     ] as const).map(([sku, name, brand, type, price, favorite]) => ({ orgId, sku, name, brand, type, price, favorite })),
   });
 
+}
+
+async function seedPrescriptions(orgId: string) {
   // Recetas de ejemplo para los pacientes demo
   const pro = await prisma.user.findFirst({ where: { orgId, isProfessional: true } });
   const byRut = async (n: number) => prisma.patient.findFirst({ where: { orgId, rut: rut(n) } });

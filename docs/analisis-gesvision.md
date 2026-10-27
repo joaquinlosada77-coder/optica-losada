@@ -70,3 +70,34 @@ ERP en la nube para ópticas (España), presente en 12 países y con más de 1.0
 4. **Laboratorio (Fase 5)**: fecha promesa y control de calidad desde el día uno.
 5. **Diferenciadores posibles en Chile**: recordatorios por WhatsApp, convenios con empresas y
    cajas de compensación, Fonasa/Isapre en la ficha, precio en CLP sin cobro por usuario.
+
+## Configuración real de la cuenta (relevada desde Gesvision, octubre 2026)
+
+Relevado en modo solo lectura, sin datos de pacientes.
+
+### Venta
+- Boleta con cliente, fecha, **fecha de entrega estimada** (obligatoria), vendedor (agente), tarifa de descuentos, motivo de visita.
+- Líneas con código, descripción, PVP, % descuento. Cristales = productos de categoría LENTES.
+- Botón **Crear OT** (orden de trabajo) y **Óptica → Asociar** graduación (optometría o contactología).
+- Formas de pago: efectivo, tarjeta crédito, débito, transferencia, cheque, crédito institución, garantía, convenio salud visual.
+- Estados personalizados del trabajo: **Laboratorio → Montaje → Disponible → Entregado**.
+
+### Catálogo de cristales
+- Gamas: MON BASICO, MON DIGITAL, PROG BASICO, PROG INTERMEDIO, PROG OCUPACIONAL, PROG PERSONALIZADO, BIFOCAL (+ variantes "tarifa").
+- Tratamientos: AR, AR TOP, AR TOP P, AR TOP P+, DuraVision, BLUE PROTECT, HC, DEG, POLAR y combinaciones.
+- Índices: 1.50, 1.52, 1.53, 1.56, 1.59, 1.60, 1.67, 1.70, 1.71, 1.74, 1.80, 1.90.
+- Precio por variante: compra sin IVA, margen %, venta sin IVA, PVP.
+- Proveedores: Luxottica, Rodenstock Chile, Italoptic, propio.
+
+### Ficha clínica
+- Cliente: RUT, móvil/fijo, email (o "sin email"), tipo (particular/empresa/pasaporte), dirección con comuna, consentimiento, publicidad, SMS.
+- Optometría: refracción final OD/OI/intermedia (esfera, cilindro, eje, adición, DNP lejos/cerca, AV sc/cc), prisma, próxima revisión, queratometría, PIO, biomicroscopía, fondo de ojo, test binoculares, acomodación.
+- Contactología: adaptaciones con frecuencia de reemplazo y tipo; lente inicial/prueba/definitivo por ojo (radios, diámetros, material, hidratación).
+
+### Laboratorio
+- Encargos con armazón, tipo de montaje, archivo OMA, graduación, alerta si falta DNP.
+- Módulo de fábrica (etapas de producción) desactivado.
+
+### Exportación (para migrar)
+- Clientes, boletas, modelos, pedidos y proveedores: exportables a Excel desde cada listado (columnas según "Plantillas").
+- **Graduaciones: no exportables** → pedir a soporte de Gesvision o vía API.

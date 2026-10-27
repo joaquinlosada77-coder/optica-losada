@@ -58,6 +58,7 @@ export async function saveLensMaterial(id: string | null, fd: FormData) {
 
 const designSchema = z.object({
   code, name: z.string().min(2, "Falta el nombre").max(60), description: z.string().max(200).optional(),
+  family: z.enum(["MONOFOCAL", "BIFOCAL", "PROGRESIVO", "OCUPACIONAL"]),
   requiresAdd: z.literal("on").optional(), sortOrder: int(0, 999), active: z.literal("on").optional(),
 });
 
@@ -77,13 +78,19 @@ export async function saveLensDesign(id: string | null, fd: FormData) {
 
 const treatmentSchema = z.object({
   code, name: z.string().min(2, "Falta el nombre").max(60), description: z.string().max(200).optional(),
+  exclusiveGroup: z.string().max(20).optional(),
   price: int(0, 10_000_000), sortOrder: int(0, 999), active: z.literal("on").optional(),
 });
 
 export async function saveLensTreatment(id: string | null, fd: FormData) {
   const ctx = await requireRole("ADMIN");
   const { active, ...t } = parse(treatmentSchema, fd);
-  const data = { ...t, description: t.description ?? null, active: id ? active === "on" : true };
+  const data = {
+    ...t,
+    description: t.description ?? null,
+    exclusiveGroup: t.exclusiveGroup?.trim().toUpperCase() || null,
+    active: id ? active === "on" : true,
+  };
   await save(() =>
     id
       ? prisma.lensTreatment.update({ where: { id, orgId: ctx.orgId }, data })

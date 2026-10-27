@@ -19,8 +19,44 @@ export type CatalogMaterial = {
   recommendFromPower: number;
   maxPower: number;
 };
-export type CatalogDesign = { id: string; code: string; name: string; description: string | null; requiresAdd: boolean };
-export type CatalogTreatment = { id: string; code: string; name: string; description: string | null; price: number };
+export type LensFamilyKey = "MONOFOCAL" | "BIFOCAL" | "PROGRESIVO" | "OCUPACIONAL";
+export type CatalogDesign = {
+  id: string;
+  code: string;
+  name: string;
+  description: string | null;
+  family: LensFamilyKey;
+  requiresAdd: boolean;
+};
+export type CatalogTreatment = {
+  id: string;
+  code: string;
+  name: string;
+  description: string | null;
+  exclusiveGroup: string | null;
+  price: number;
+};
+
+export const FAMILY_LABEL: Record<LensFamilyKey, string> = {
+  MONOFOCAL: "Monofocal",
+  BIFOCAL: "Bifocal",
+  PROGRESIVO: "Progresivo",
+  OCUPACIONAL: "Ocupacional",
+};
+
+/**
+ * Activa/desactiva un tratamiento. Si pertenece a un grupo excluyente
+ * (p.ej. AR / AR TOP / AR TOP P), al activarlo se quitan los demás del grupo.
+ */
+export function toggleTreatment(treatments: CatalogTreatment[], selected: string[], id: string): string[] {
+  if (selected.includes(id)) return selected.filter((x) => x !== id);
+  const t = treatments.find((x) => x.id === id);
+  if (!t) return selected;
+  const rivals = t.exclusiveGroup
+    ? new Set(treatments.filter((x) => x.exclusiveGroup === t.exclusiveGroup).map((x) => x.id))
+    : new Set<string>();
+  return [...selected.filter((x) => !rivals.has(x)), id];
+}
 
 export type LensCatalog = {
   materials: CatalogMaterial[];
@@ -90,9 +126,11 @@ export function resolveLens(catalog: LensCatalog, sel: LensSelection, rx: Rx | n
   // Orden estable (el del catálogo) para que la misma combinación siempre dé el mismo código
   const treatments = catalog.treatments.filter((t) => sel.treatmentIds.includes(t.id));
   if (treatments.length !== new Set(sel.treatmentIds).size) return { error: "Tratamiento no disponible" };
+  const groups = treatments.flatMap((t) => (t.exclusiveGroup ? [t.exclusiveGroup] : []));
+  if (new Set(groups).size !== groups.length) return { error: "Elegiste dos opciones del mismo tipo de tratamiento" };
 
   const code = [m.code, d.code, ...treatments.map((t) => t.code)].join("-");
-  const description = `Cristales ${d.name} ${m.name}${treatments.length ? ` + ${treatments.map((t) => t.name).join(" + ")}` : ""}`;
+  const description = `Cristales ${d.name} ${m.refractiveIndex}${treatments.length ? ` + ${treatments.map((t) => t.name).join(" + ")}` : ""}`;
   const price = base + treatments.reduce((s, t) => s + t.price, 0);
   return { code, description, price };
 }
