@@ -21,6 +21,7 @@ const ITEMS: Item[] = [
   { href: "/configuracion/cristales", label: "Cristales", icon: "◎", adminOnly: true },
   { href: "/configuracion/sucursales", label: "Sucursales", icon: "⌖", adminOnly: true },
   { href: "/configuracion/usuarios", label: "Usuarios", icon: "⚇", adminOnly: true },
+  { href: "/configuracion/importar", label: "Importar", icon: "⇪", adminOnly: true },
 ];
 
 export function Nav({ isAdmin }: { isAdmin: boolean }) {

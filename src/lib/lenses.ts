@@ -9,6 +9,14 @@ export type Rx = {
   oiAdd: number | null;
 };
 
+/** Receta tal como está guardada (la esfera puede faltar en recetas importadas). */
+export type StoredRx = Omit<Rx, "odSph" | "oiSph"> & { odSph: number | null; oiSph: number | null };
+
+/** Para los cálculos de grosor, un ojo sin esfera registrada se trata como neutro. */
+export function toRx(r: StoredRx): Rx {
+  return { ...r, odSph: r.odSph ?? 0, oiSph: r.oiSph ?? 0 };
+}
+
 export type CatalogMaterial = {
   id: string;
   code: string;

@@ -86,21 +86,24 @@ export default async function PatientPage({ params }: { params: Promise<{ id: st
                 {p.prescriptions.map((r, idx) => (
                   <div key={r.id} className={idx === 0 ? "rounded-lg border border-brand-100 bg-brand-50/50 p-3" : "rounded-lg border border-slate-100 p-3"}>
                     <div className="mb-1 text-xs text-slate-500">
-                      {r.issuedAt.toISOString().slice(0, 10).split("-").reverse().join("-")} · {r.professional?.name ?? "Receta externa"}{idx === 0 && " · vigente"}
+                      {r.issuedAt.toISOString().slice(0, 10).split("-").reverse().join("-")} · {r.professional?.name ?? r.professionalName ?? "Receta externa"}{idx === 0 && " · vigente"}
+                      {r.dpTotal && ` · DP ${String(r.dpTotal).replace(".", ",")} mm`}
                     </div>
                     <table className="font-mono text-sm">
                       <tbody>
-                        {([["OD", r.odSph, r.odCyl, r.odAxis, r.odAdd, r.dpOd], ["OI", r.oiSph, r.oiCyl, r.oiAxis, r.oiAdd, r.dpOi]] as const).map(([eye, sph, cyl, ax, add, dp]) => (
+                        {([["OD", r.odSph, r.odCyl, r.odAxis, r.odAdd, r.dpOd, r.avccOd], ["OI", r.oiSph, r.oiCyl, r.oiAxis, r.oiAdd, r.dpOi, r.avccOi]] as const).map(([eye, sph, cyl, ax, add, dp, av]) => (
                           <tr key={eye}>
                             <td className="pr-3 font-sans font-semibold">{eye}</td>
                             <td className="pr-3">{fmtDiopter(sph)}</td>
                             <td className="pr-3">{cyl ? `${fmtDiopter(cyl)} x ${ax}°` : ""}</td>
                             <td className="pr-3">{add ? `Add ${fmtDiopter(add)}` : ""}</td>
-                            <td className="text-slate-500">{dp ? `DP ${String(dp).replace(".", ",")}` : ""}</td>
+                            <td className="pr-3 text-slate-500">{dp ? `DP ${String(dp).replace(".", ",")}` : ""}</td>
+                            <td className="text-slate-500">{av ? `AV ${av}` : ""}</td>
                           </tr>
                         ))}
                       </tbody>
                     </table>
+                    {r.reason && <p className="mt-1 text-xs text-slate-600">Motivo: {r.reason}</p>}
                     {r.notes && <p className="mt-1 text-xs text-slate-600">{r.notes}</p>}
                   </div>
                 ))}

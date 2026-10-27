@@ -32,6 +32,7 @@ const rxSchema = z
     oiAdd: optional(diopter(0.25, 4)),
     dpOd: optional(dp),
     dpOi: optional(dp),
+    dpTotal: optional(z.coerce.number().min(45, "DP total entre 45 y 80").max(80, "DP total entre 45 y 80")),
     notes: z.string().max(1000).optional(),
   })
   .refine((r) => !r.odCyl || r.odAxis !== undefined, { message: "Falta el eje", path: ["odAxis"] })
@@ -61,7 +62,7 @@ export async function createPrescription(patientId: string, _prev: FormState, fd
       issuedAt: new Date(`${r.issuedAt}T00:00:00Z`),
       odSph: r.odSph, odCyl: r.odCyl ?? 0, odAxis: r.odCyl ? r.odAxis! : null, odAdd: r.odAdd ?? null,
       oiSph: r.oiSph, oiCyl: r.oiCyl ?? 0, oiAxis: r.oiCyl ? r.oiAxis! : null, oiAdd: r.oiAdd ?? null,
-      dpOd: r.dpOd ?? null, dpOi: r.dpOi ?? null,
+      dpOd: r.dpOd ?? null, dpOi: r.dpOi ?? null, dpTotal: r.dpTotal ?? null,
       notes: r.notes ?? null,
       createdById: ctx.user.id,
     },

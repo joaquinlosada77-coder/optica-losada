@@ -79,6 +79,11 @@ export function PrescriptionForm({
             ))}
           </tbody>
         </table>
+        <div className="mt-3 max-w-xs">
+          <Field label="DP total (mm)" error={fe.dpTotal} hint="Si se mide binocular, en vez de por ojo">
+            <input name="dpTotal" inputMode="decimal" placeholder="62" className={`${inputCls} h-12 text-center font-mono text-lg`} />
+          </Field>
+        </div>
         <p className="mt-2 text-xs text-slate-500">Esfera en pasos de 0,25 (usa 0 para neutro). Si hay cilindro, el eje es obligatorio. Acepta coma o punto decimal.</p>
       </fieldset>
 

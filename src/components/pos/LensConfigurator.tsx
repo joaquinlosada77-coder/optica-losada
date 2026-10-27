@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import { formatCLP } from "@/lib/money";
 import {
-  FAMILY_LABEL, designAvailable, fmtDiopter, fromPrice, materialAvailable, recommendedMaterialId, resolveLens, toggleTreatment,
+  FAMILY_LABEL, toRx, designAvailable, fmtDiopter, fromPrice, materialAvailable, recommendedMaterialId, resolveLens, toggleTreatment,
   type LensCatalog, type LensFamilyKey, type LensSelection,
 } from "@/lib/lenses";
 import type { RxSummary } from "@/server/lenses";
@@ -29,7 +29,7 @@ function LensThickness({ level, active }: { level: number; active: boolean }) {
 
 export function LensConfigurator({
   catalog,
-  rx,
+  rx: storedRx,
   patientName,
   patientId,
   onAdd,
@@ -42,6 +42,7 @@ export function LensConfigurator({
   onAdd: (lens: ConfiguredLens) => void;
   onClose: () => void;
 }) {
+  const rx = useMemo(() => (storedRx ? toRx(storedRx) : null), [storedRx]);
   const recommended = useMemo(() => recommendedMaterialId(catalog.materials, rx), [catalog, rx]);
   const [step, setStep] = useState(0);
   const [materialId, setMaterialId] = useState<string | null>(null);
@@ -65,14 +66,14 @@ export function LensConfigurator({
           <div className="text-xl font-semibold">Elige tus cristales</div>
           <div className="text-sm text-slate-500">{patientName ?? "Cliente sin ficha"}</div>
         </div>
-        {rx ? (
+        {storedRx ? (
           <table className="text-sm">
             <thead className="text-xs text-slate-500">
               <tr><th className="pr-3 text-left" /><th className="px-2">Esfera</th><th className="px-2">Cilindro</th><th className="px-2">Eje</th><th className="px-2">Adición</th></tr>
             </thead>
             <tbody className="font-mono">
-              <tr><td className="pr-3 font-sans font-semibold">OD</td><td className="px-2 text-center">{fmtDiopter(rx.odSph)}</td><td className="px-2 text-center">{rx.odCyl ? fmtDiopter(rx.odCyl) : "—"}</td><td className="px-2 text-center">{rx.odAxis ?? "—"}</td><td className="px-2 text-center">{rx.odAdd ? fmtDiopter(rx.odAdd) : "—"}</td></tr>
-              <tr><td className="pr-3 font-sans font-semibold">OI</td><td className="px-2 text-center">{fmtDiopter(rx.oiSph)}</td><td className="px-2 text-center">{rx.oiCyl ? fmtDiopter(rx.oiCyl) : "—"}</td><td className="px-2 text-center">{rx.oiAxis ?? "—"}</td><td className="px-2 text-center">{rx.oiAdd ? fmtDiopter(rx.oiAdd) : "—"}</td></tr>
+              <tr><td className="pr-3 font-sans font-semibold">OD</td><td className="px-2 text-center">{fmtDiopter(storedRx.odSph)}</td><td className="px-2 text-center">{storedRx.odCyl ? fmtDiopter(storedRx.odCyl) : "—"}</td><td className="px-2 text-center">{storedRx.odAxis ?? "—"}</td><td className="px-2 text-center">{storedRx.odAdd ? fmtDiopter(storedRx.odAdd) : "—"}</td></tr>
+              <tr><td className="pr-3 font-sans font-semibold">OI</td><td className="px-2 text-center">{fmtDiopter(storedRx.oiSph)}</td><td className="px-2 text-center">{storedRx.oiCyl ? fmtDiopter(storedRx.oiCyl) : "—"}</td><td className="px-2 text-center">{storedRx.oiAxis ?? "—"}</td><td className="px-2 text-center">{storedRx.oiAdd ? fmtDiopter(storedRx.oiAdd) : "—"}</td></tr>
             </tbody>
           </table>
         ) : (
@@ -235,7 +236,7 @@ export function LensConfigurator({
           disabled={!resolved || "error" in resolved}
           onClick={() => {
             if (resolved && !("error" in resolved) && materialId && designId) {
-              onAdd({ materialId, designId, treatmentIds, prescriptionId: rx?.id ?? null, ...resolved });
+              onAdd({ materialId, designId, treatmentIds, prescriptionId: storedRx?.id ?? null, ...resolved });
             }
           }}
           className="h-16 rounded-xl bg-emerald-600 px-8 text-lg font-semibold text-white shadow active:scale-95 disabled:bg-slate-300"

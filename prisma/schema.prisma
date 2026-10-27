@@ -154,6 +154,7 @@ model Patient {
   ocupacion           String?
   notas               String?
   aceptaMarketing     Boolean    @default(false) @map("acepta_marketing") // Ley 19.628
+  externalCode        String?    @map("external_code") // código de cliente en el sistema anterior (Gesvision)
   active              Boolean    @default(true)
   createdAt           DateTime   @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt           DateTime   @updatedAt @map("updated_at") @db.Timestamptz(3)
@@ -166,6 +167,7 @@ model Patient {
 
   @@unique([orgId, rut])
   @@index([orgId, apellidoPaterno])
+  @@index([orgId, externalCode])
   @@map("patients")
 }
 
@@ -392,29 +394,36 @@ model CashSession {
 
 // Receta óptica (núcleo de la ficha optométrica). Valores en dioptrías, pasos de 0,25.
 model Prescription {
-  id             String   @id @default(cuid())
-  orgId          String   @map("org_id")
-  patientId      String   @map("patient_id")
-  professionalId String?  @map("professional_id")
-  issuedAt       DateTime @map("issued_at") @db.Date
-  odSph          Float    @map("od_sph")
-  odCyl          Float    @default(0) @map("od_cyl")
-  odAxis         Int?     @map("od_axis")
-  odAdd          Float?   @map("od_add")
-  oiSph          Float    @map("oi_sph")
-  oiCyl          Float    @default(0) @map("oi_cyl")
-  oiAxis         Int?     @map("oi_axis")
-  oiAdd          Float?   @map("oi_add")
-  dpOd           Float?   @map("dp_od") // distancia pupilar monocular (mm)
-  dpOi           Float?   @map("dp_oi")
-  notes          String?
-  createdById    String   @map("created_by_id")
-  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  id               String   @id @default(cuid())
+  orgId            String   @map("org_id")
+  patientId        String   @map("patient_id")
+  professionalId   String?  @map("professional_id")
+  issuedAt         DateTime @map("issued_at") @db.Date
+  odSph            Float?   @map("od_sph") // null = no medido (recetas importadas)
+  odCyl            Float    @default(0) @map("od_cyl")
+  odAxis           Int?     @map("od_axis")
+  odAdd            Float?   @map("od_add")
+  oiSph            Float?   @map("oi_sph")
+  oiCyl            Float    @default(0) @map("oi_cyl")
+  oiAxis           Int?     @map("oi_axis")
+  oiAdd            Float?   @map("oi_add")
+  dpOd             Float?   @map("dp_od") // distancia pupilar monocular (mm)
+  dpOi             Float?   @map("dp_oi")
+  dpTotal          Float?   @map("dp_total") // distancia pupilar binocular (mm)
+  avccOd           String?  @map("avcc_od") // agudeza visual con corrección, como se anotó (p.ej. "1,0p")
+  avccOi           String?  @map("avcc_oi")
+  professionalName String?  @map("professional_name") // nombre del tecnólogo cuando no es un usuario del sistema
+  reason           String? // motivo de visita
+  notes            String?
+  externalRef      String?  @map("external_ref") // huella del registro importado (evita duplicar al reimportar)
+  createdById      String   @map("created_by_id")
+  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
 
   org          Organization @relation(fields: [orgId], references: [id])
   patient      Patient      @relation(fields: [patientId], references: [id])
   professional User?        @relation("PrescriptionProfessional", fields: [professionalId], references: [id])
 
+  @@unique([orgId, externalRef])
   @@index([patientId, issuedAt])
   @@map("prescriptions")
 }

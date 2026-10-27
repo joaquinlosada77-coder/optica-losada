@@ -5,7 +5,7 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { prisma } from "@/lib/db";
 import { lineTotal, saleTotals } from "@/lib/money";
-import { resolveLens } from "@/lib/lenses";
+import { resolveLens, toRx } from "@/lib/lenses";
 import { audit, requireContext } from "@/server/auth";
 import { loadLensCatalog } from "@/server/lenses";
 
@@ -92,7 +92,7 @@ export async function createSale(input: SaleInput): Promise<Result> {
         rx = await prisma.prescription.findFirst({ where: { id: i.prescriptionId, orgId: ctx.orgId, patientId: s.patientId ?? "-" } });
         if (!rx) return { ok: false, error: "La receta no corresponde al paciente de la venta." };
       }
-      const lens = resolveLens(catalog!, i, rx);
+      const lens = resolveLens(catalog!, i, rx && toRx(rx));
       if ("error" in lens) return { ok: false, error: lens.error };
       items.push({
         productId: null,

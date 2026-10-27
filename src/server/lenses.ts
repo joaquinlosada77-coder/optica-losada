@@ -1,6 +1,6 @@
 import "server-only";
 import { prisma } from "@/lib/db";
-import type { LensCatalog, Rx } from "@/lib/lenses";
+import type { LensCatalog, StoredRx } from "@/lib/lenses";
 
 export async function loadLensCatalog(orgId: string): Promise<LensCatalog> {
   const [materials, designs, treatments] = await Promise.all([
@@ -33,7 +33,7 @@ export async function loadLensCatalog(orgId: string): Promise<LensCatalog> {
   };
 }
 
-export type RxSummary = Rx & {
+export type RxSummary = StoredRx & {
   id: string;
   issuedAt: string;
   odAxis: number | null;

@@ -12,7 +12,7 @@ import { PaymentBox, PrintButton, VoidButton } from "@/components/sales/SaleActi
 import { WorkStatusBar } from "@/components/sales/WorkStatusBar";
 import { Alert, Badge, Card, PageHeader } from "@/components/ui";
 
-type LensRx = { odSph: number; odCyl: number; odAxis: number | null; odAdd: number | null; oiSph: number; oiCyl: number; oiAxis: number | null; oiAdd: number | null } | null;
+type LensRx = { odSph: number | null; odCyl: number; odAxis: number | null; odAdd: number | null; oiSph: number | null; oiCyl: number; oiAxis: number | null; oiAdd: number | null } | null;
 
 export default async function SalePage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
