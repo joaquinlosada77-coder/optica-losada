@@ -56,3 +56,12 @@ describe("agenda", () => {
     expect(slotSpan(s, new Date(s.getTime() + 10 * 60000), 30)).toBe(1);
   });
 });
+
+describe("semana comercial", async () => {
+  const { weekStartISO } = await import("@/lib/time");
+  it("empieza el lunes", () => {
+    expect(weekStartISO("2026-10-27")).toBe("2026-10-26"); // martes
+    expect(weekStartISO("2026-10-26")).toBe("2026-10-26"); // lunes
+    expect(weekStartISO("2026-11-01")).toBe("2026-10-26"); // domingo
+  });
+});

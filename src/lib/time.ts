@@ -62,3 +62,9 @@ export function ageFrom(birth: Date, now: Date = new Date()): number {
   const bd = birth.getUTCDate();
   return ty - by - (tm < bm || (tm === bm && td < bd) ? 1 : 0);
 }
+
+/** Lunes de la semana (Chile) que contiene la fecha dada. */
+export function weekStartISO(dateISO: string): string {
+  const dow = new TZDate(localToUtc(dateISO, "12:00"), TZ).getDay(); // 0 = domingo
+  return shiftDayISO(dateISO, dow === 0 ? -6 : 1 - dow);
+}
