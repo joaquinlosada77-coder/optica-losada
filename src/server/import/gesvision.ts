@@ -1,240 +1,149 @@
 import "server-only";
 import { randomUUID } from "node:crypto";
-import ExcelJS from "exceljs";
+import { z } from "zod";
 import { prisma } from "@/lib/db";
-import { missingHeaders, normalizeRow, type GvRow, type NormalizedRow, type Warning } from "@/lib/import/gesvision";
 
-/** Valor de celda de ExcelJS a valor plano (texto enriquecido, hipervínculos, fórmulas). */
-function cellValue(v: ExcelJS.CellValue): unknown {
-  if (v === null || v === undefined) return null;
-  if (v instanceof Date || typeof v !== "object") return v;
-  if ("richText" in v) return v.richText.map((t) => t.text).join("");
-  if ("text" in v) return typeof v.text === "string" ? v.text : null;
-  if ("result" in v) return v.result ?? null;
-  return null;
-}
-
-export type ParsedFile = { headers: string[]; rows: NormalizedRow[]; emptyRows: number };
-
-/** Lee la primera hoja en modo streaming (sirve para archivos de decenas de MB). */
-export async function readGesvisionFile(path: string): Promise<ParsedFile> {
-  const reader = new ExcelJS.stream.xlsx.WorkbookReader(path, { sharedStrings: "cache", hyperlinks: "cache", styles: "cache", worksheets: "emit" });
-  let headers: string[] = [];
-  const rows: NormalizedRow[] = [];
-  let emptyRows = 0;
-  for await (const sheet of reader) {
-    for await (const row of sheet) {
-      const values = (row.values as ExcelJS.CellValue[]).slice(1).map(cellValue);
-      if (headers.length === 0) {
-        headers = values.map((v) => String(v ?? "").trim());
-        continue;
-      }
-      const obj: GvRow = {};
-      headers.forEach((h, i) => ((obj as Record<string, unknown>)[h] = values[i] ?? null));
-      const n = normalizeRow(obj, row.number);
-      if (n) rows.push(n);
-      else emptyRows++;
-    }
-    break; // solo la primera hoja
-  }
-  return { headers, rows, emptyRows };
-}
+// El navegador lee y normaliza el Excel; aquí llegan tandas de datos ya limpios.
 
 const norm = (s: string) => s.normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^a-z0-9]/gi, "").toLowerCase();
+const branchCode = (serie: string) => `GV${serie}`.slice(0, 8).toUpperCase();
 
-type PatientPlan = {
-  key: string;
-  data: NormalizedRow["patient"];
-  branchKey: string;
-  existingId: string | null;
-};
+const str = (max: number) => z.string().max(max).nullable();
+const num = z.number().finite().nullable();
 
-export type ImportSummary = {
-  rows: number;
-  emptyRows: number;
-  missingHeaders: string[];
-  branches: { serie: string; name: string; rows: number; existing: string | null }[];
-  patientsNew: number;
-  patientsExisting: number;
-  prescriptions: number;
-  prescriptionsAlreadyImported: number;
-  rowsWithoutRx: number;
-  warnings: { type: Warning; count: number; sampleRows: number[] }[];
-};
+export const branchesInput = z.array(z.object({ serie: z.string().max(20), name: z.string().max(120) })).max(200);
 
-async function plan(orgId: string, parsed: ParsedFile) {
-  const { rows } = parsed;
+export const patientsInput = z
+  .array(
+    z.object({
+      key: z.string().max(60),
+      externalCode: str(40),
+      rut: str(12),
+      documento: str(40),
+      nombres: z.string().max(120),
+      apellidoPaterno: z.string().max(80),
+      apellidoMaterno: str(80),
+      fechaNacimiento: z.iso.date().nullable(),
+      telefono: str(30),
+      email: str(120),
+      branchSerie: z.string().max(20),
+    }),
+  )
+  .max(2000);
 
-  // Sucursales: por nombre normalizado o por código GV<serie>
-  const branches = await prisma.branch.findMany({ where: { orgId } });
-  const branchRows = new Map<string, { serie: string; name: string; rows: number }>();
-  for (const r of rows) {
-    const k = r.branch.serie;
-    const b = branchRows.get(k) ?? { ...r.branch, rows: 0 };
-    b.rows++;
-    branchRows.set(k, b);
+export const prescriptionsInput = z
+  .array(
+    z.object({
+      patientKey: z.string().max(60),
+      issuedAt: z.iso.date(),
+      odSph: num, odCyl: z.number(), odAxis: z.number().int().nullable(), odAdd: num,
+      oiSph: num, oiCyl: z.number(), oiAxis: z.number().int().nullable(), oiAdd: num,
+      dpOd: num, dpOi: num, dpTotal: num,
+      avccOd: str(20), avccOi: str(20),
+      professionalName: str(120),
+      reason: str(2000),
+      externalRef: z.string().max(300),
+    }),
+  )
+  .max(2000);
+
+async function branchMap(orgId: string) {
+  return prisma.branch.findMany({ where: { orgId }, select: { id: true, code: true, name: true } });
+}
+
+function matchBranch(all: { id: string; code: string; name: string }[], serie: string, name: string) {
+  return all.find((b) => b.code === branchCode(serie)) ?? all.find((b) => norm(b.name) === norm(name)) ?? null;
+}
+
+/** Resumen previo: sucursales reconocidas, pacientes existentes y recetas ya importadas (por tanda). */
+export async function verify(orgId: string, input: { branches?: z.infer<typeof branchesInput>; keys?: string[]; refs?: string[] }) {
+  const out: { branches?: { serie: string; existing: string | null }[]; existingPatients?: number; alreadyImported?: number } = {};
+  if (input.branches) {
+    const all = await branchMap(orgId);
+    out.branches = input.branches.map((b) => ({ serie: b.serie, existing: matchBranch(all, b.serie, b.name)?.name ?? null }));
   }
-  const branchMatch = new Map<string, string | null>();
-  for (const [serie, b] of branchRows) {
-    const found = branches.find((x) => x.code === `GV${serie}`.slice(0, 8) || norm(x.name) === norm(b.name));
-    branchMatch.set(serie, found?.id ?? null);
-  }
+  if (input.keys) out.existingPatients = (await resolvePatients(orgId, input.keys)).size;
+  if (input.refs) out.alreadyImported = await prisma.prescription.count({ where: { orgId, externalRef: { in: input.refs } } });
+  return out;
+}
 
-  // Pacientes: agrupar por RUT (o código); los datos más recientes mandan, se completan vacíos con filas anteriores
-  const sorted = [...rows].sort((a, b) => (a.rx?.issuedAt ?? "").localeCompare(b.rx?.issuedAt ?? "") || a.row - b.row);
-  const patients = new Map<string, PatientPlan>();
-  for (const r of sorted) {
-    const prev = patients.get(r.patient.key);
-    const merged = { ...(prev?.data ?? r.patient) };
-    for (const [k, v] of Object.entries(r.patient)) if (v !== null && v !== "") (merged as Record<string, unknown>)[k] = v;
-    patients.set(r.patient.key, { key: r.patient.key, data: merged, branchKey: r.branch.serie, existingId: null });
-  }
-
-  // Pacientes que ya existen en el sistema (por RUT o por código Gesvision)
-  const ruts = [...patients.values()].flatMap((p) => (p.data.rut ? [p.data.rut] : []));
-  const codes = [...patients.values()].flatMap((p) => (p.data.externalCode ? [p.data.externalCode] : []));
-  const existing = await prisma.patient.findMany({
+/** Mapa clave de importación ("RUT" o "COD:<código>") → id de paciente existente. */
+async function resolvePatients(orgId: string, keys: string[]) {
+  const codes = keys.filter((k) => k.startsWith("COD:")).map((k) => k.slice(4));
+  const ruts = keys.filter((k) => !k.startsWith("COD:"));
+  const found = await prisma.patient.findMany({
     where: { orgId, OR: [{ rut: { in: ruts } }, { externalCode: { in: codes } }] },
     select: { id: true, rut: true, externalCode: true },
   });
-  const byRut = new Map(existing.filter((e) => e.rut).map((e) => [e.rut!, e.id]));
-  const byCode = new Map(existing.filter((e) => e.externalCode).map((e) => [e.externalCode!, e.id]));
-  for (const p of patients.values()) {
-    p.existingId = (p.data.rut && byRut.get(p.data.rut)) || (p.data.externalCode && byCode.get(p.data.externalCode)) || null;
+  const map = new Map<string, string>();
+  for (const p of found) {
+    if (p.rut && ruts.includes(p.rut)) map.set(p.rut, p.id);
+    if (p.externalCode && codes.includes(p.externalCode)) map.set(`COD:${p.externalCode}`, p.id);
   }
-
-  // Recetas ya importadas antes (misma huella)
-  const refs = rows.flatMap((r) => (r.rx ? [r.rx.externalRef] : []));
-  const already = new Set<string>();
-  for (let i = 0; i < refs.length; i += 5000) {
-    const found = await prisma.prescription.findMany({ where: { orgId, externalRef: { in: refs.slice(i, i + 5000) } }, select: { externalRef: true } });
-    found.forEach((f) => already.add(f.externalRef!));
-  }
-
-  const warnMap = new Map<Warning, { count: number; sampleRows: number[] }>();
-  for (const r of rows) {
-    for (const w of new Set(r.warnings)) {
-      const e = warnMap.get(w) ?? { count: 0, sampleRows: [] };
-      e.count++;
-      if (e.sampleRows.length < 5) e.sampleRows.push(r.row);
-      warnMap.set(w, e);
-    }
-  }
-
-  const uniqueRefs = new Set(refs);
-  const summary: ImportSummary = {
-    rows: rows.length,
-    emptyRows: parsed.emptyRows,
-    missingHeaders: missingHeaders(parsed.headers),
-    branches: [...branchRows.values()].map((b) => ({
-      ...b,
-      existing: branches.find((x) => x.id === branchMatch.get(b.serie))?.name ?? null,
-    })),
-    patientsNew: [...patients.values()].filter((p) => !p.existingId).length,
-    patientsExisting: [...patients.values()].filter((p) => p.existingId).length,
-    prescriptions: [...uniqueRefs].filter((r) => !already.has(r)).length,
-    prescriptionsAlreadyImported: [...uniqueRefs].filter((r) => already.has(r)).length,
-    rowsWithoutRx: rows.filter((r) => !r.rx).length,
-    warnings: [...warnMap.entries()].map(([type, v]) => ({ type, ...v })).sort((a, b) => b.count - a.count),
-  };
-  return { summary, patients, branchRows, branchMatch, already };
+  return map;
 }
 
-export async function previewImport(orgId: string, path: string): Promise<ImportSummary> {
-  const parsed = await readGesvisionFile(path);
-  return (await plan(orgId, parsed)).summary;
+export async function ensureBranches(orgId: string, branches: z.infer<typeof branchesInput>) {
+  const all = await branchMap(orgId);
+  let created = 0;
+  for (const b of branches) {
+    if (matchBranch(all, b.serie, b.name)) continue;
+    const nb = await prisma.branch.create({ data: { orgId, code: branchCode(b.serie), name: b.name } });
+    all.push({ id: nb.id, code: nb.code, name: nb.name });
+    created++;
+  }
+  return { created };
 }
 
-export async function runImport(orgId: string, userId: string, path: string) {
-  const parsed = await readGesvisionFile(path);
-  const p = await plan(orgId, parsed);
-  if (p.summary.missingHeaders.length) throw new Error(`Faltan columnas: ${p.summary.missingHeaders.join(", ")}`);
-
-  // 1) Sucursales que faltan
-  const branchId = new Map<string, string>();
-  for (const [serie, b] of p.branchRows) {
-    let id = p.branchMatch.get(serie) ?? null;
-    if (!id) {
-      const created = await prisma.branch.create({
-        data: { orgId, code: `GV${serie}`.slice(0, 8).toUpperCase(), name: b.name, active: true },
-      });
-      id = created.id;
-    }
-    branchId.set(serie, id);
-  }
-
-  // 2) Pacientes nuevos (ids generados aquí para enlazar las recetas sin consultar)
-  const patientId = new Map<string, string>();
+export async function importPatients(orgId: string, patients: z.infer<typeof patientsInput>) {
+  const branches = await branchMap(orgId);
+  const existing = await resolvePatients(orgId, patients.map((p) => p.key));
   const toCreate = [];
-  for (const pl of p.patients.values()) {
-    if (pl.existingId) { patientId.set(pl.key, pl.existingId); continue; }
-    const id = randomUUID();
-    patientId.set(pl.key, id);
-    const d = pl.data;
+  let updated = 0;
+  for (const p of patients) {
+    const homeBranchId = branches.find((b) => b.code === branchCode(p.branchSerie))?.id ?? null;
+    const birth = p.fechaNacimiento ? new Date(`${p.fechaNacimiento}T00:00:00Z`) : null;
+    const id = existing.get(p.key);
+    if (id) {
+      // Solo se completan campos vacíos: no se pisa lo editado en el sistema nuevo
+      const cur = await prisma.patient.findUnique({ where: { id }, select: { externalCode: true, telefono: true, email: true, fechaNacimiento: true } });
+      const fill: Record<string, unknown> = {};
+      if (cur && !cur.externalCode && p.externalCode) fill.externalCode = p.externalCode;
+      if (cur && !cur.telefono && p.telefono) fill.telefono = p.telefono;
+      if (cur && !cur.email && p.email) fill.email = p.email;
+      if (cur && !cur.fechaNacimiento && birth) fill.fechaNacimiento = birth;
+      if (Object.keys(fill).length) { await prisma.patient.update({ where: { id }, data: fill }); updated++; }
+      continue;
+    }
     toCreate.push({
-      id,
+      id: randomUUID(),
       orgId,
-      homeBranchId: branchId.get(pl.branchKey) ?? null,
-      rut: d.rut,
-      documentoExtranjero: d.rut ? null : d.documento,
-      externalCode: d.externalCode,
-      nombres: d.nombres,
-      apellidoPaterno: d.apellidoPaterno,
-      apellidoMaterno: d.apellidoMaterno,
-      fechaNacimiento: d.fechaNacimiento ? new Date(`${d.fechaNacimiento}T00:00:00Z`) : null,
-      telefono: d.telefono,
-      email: d.email,
-      notas: !d.rut && d.documento ? `Importado de Gesvision con RUT inválido: ${d.documento}. Revisar.` : null,
+      homeBranchId,
+      rut: p.rut,
+      documentoExtranjero: p.rut ? null : p.documento,
+      externalCode: p.externalCode,
+      nombres: p.nombres,
+      apellidoPaterno: p.apellidoPaterno,
+      apellidoMaterno: p.apellidoMaterno,
+      fechaNacimiento: birth,
+      telefono: p.telefono,
+      email: p.email,
+      notas: !p.rut && p.documento ? `Importado de Gesvision con RUT inválido: ${p.documento}. Revisar.` : null,
     });
   }
-  for (let i = 0; i < toCreate.length; i += 1000) {
-    await prisma.patient.createMany({ data: toCreate.slice(i, i + 1000), skipDuplicates: true });
-  }
+  const res = await prisma.patient.createMany({ data: toCreate, skipDuplicates: true });
+  return { created: res.count, updated };
+}
 
-  // Pacientes existentes: solo se completan campos vacíos (no se pisa lo editado en el sistema nuevo)
-  let patientsUpdated = 0;
-  for (const pl of p.patients.values()) {
-    if (!pl.existingId) continue;
-    const cur = await prisma.patient.findUnique({ where: { id: pl.existingId } });
-    if (!cur) continue;
-    const d = pl.data;
-    const fill: Record<string, unknown> = {};
-    if (!cur.externalCode && d.externalCode) fill.externalCode = d.externalCode;
-    if (!cur.telefono && d.telefono) fill.telefono = d.telefono;
-    if (!cur.email && d.email) fill.email = d.email;
-    if (!cur.fechaNacimiento && d.fechaNacimiento) fill.fechaNacimiento = new Date(`${d.fechaNacimiento}T00:00:00Z`);
-    if (Object.keys(fill).length) {
-      await prisma.patient.update({ where: { id: cur.id }, data: fill });
-      patientsUpdated++;
-    }
-  }
-
-  // 3) Recetas (la huella única evita duplicados si se vuelve a importar)
-  const rxRows = parsed.rows.filter((r) => r.rx && !p.already.has(r.rx.externalRef));
-  const rxData = rxRows.map((r) => ({
-    orgId,
-    patientId: patientId.get(r.patient.key)!,
-    createdById: userId,
-    issuedAt: new Date(`${r.rx!.issuedAt}T00:00:00Z`),
-    odSph: r.rx!.odSph, odCyl: r.rx!.odCyl, odAxis: r.rx!.odAxis, odAdd: r.rx!.odAdd,
-    oiSph: r.rx!.oiSph, oiCyl: r.rx!.oiCyl, oiAxis: r.rx!.oiAxis, oiAdd: r.rx!.oiAdd,
-    dpOd: r.rx!.dpOd, dpOi: r.rx!.dpOi, dpTotal: r.rx!.dpTotal,
-    avccOd: r.rx!.avccOd, avccOi: r.rx!.avccOi,
-    professionalName: r.rx!.professionalName,
-    reason: r.rx!.reason,
-    notes: "Importada desde Gesvision",
-    externalRef: r.rx!.externalRef,
-  }));
-  let prescriptionsCreated = 0;
-  for (let i = 0; i < rxData.length; i += 1000) {
-    const res = await prisma.prescription.createMany({ data: rxData.slice(i, i + 1000), skipDuplicates: true });
-    prescriptionsCreated += res.count;
-  }
-
-  return {
-    branchesCreated: [...p.branchMatch.values()].filter((v) => !v).length,
-    patientsCreated: toCreate.length,
-    patientsUpdated,
-    prescriptionsCreated,
-  };
+export async function importPrescriptions(orgId: string, userId: string, rows: z.infer<typeof prescriptionsInput>) {
+  const ids = await resolvePatients(orgId, [...new Set(rows.map((r) => r.patientKey))]);
+  const data = rows.flatMap((r) => {
+    const patientId = ids.get(r.patientKey);
+    if (!patientId) return [];
+    const { patientKey: _k, issuedAt, ...rx } = r;
+    void _k;
+    return [{ ...rx, orgId, patientId, createdById: userId, issuedAt: new Date(`${issuedAt}T00:00:00Z`), notes: "Importada desde Gesvision" }];
+  });
+  const res = await prisma.prescription.createMany({ data, skipDuplicates: true });
+  return { created: res.count, unlinked: rows.length - data.length };
 }

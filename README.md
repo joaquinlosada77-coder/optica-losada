@@ -5,7 +5,13 @@ ERP para ópticas en Chile, multi-sucursal, tomando como referencia funcional a 
 
 **Stack:** Next.js 15 (App Router, Server Actions) · TypeScript · PostgreSQL 16 · Prisma 6 · Tailwind 4 · Zod · Vitest
 
-## Puesta en marcha
+## Publicar en internet
+
+Guía paso a paso (Vercel + Neon, sin instalar nada): [docs/publicar.md](docs/publicar.md).
+En una instalación nueva el sistema lleva a `/setup` para crear la empresa y el administrador,
+y desde **Configuración → Importar** se cargan pacientes y graduaciones exportados desde Gesvision.
+
+## Puesta en marcha (desarrollo local)
 
 ```bash
 docker compose up -d          # o un PostgreSQL 16 propio

@@ -100,7 +100,8 @@ export async function saveUser(id: string | null, _prev: FormState, fd: FormData
     isProfessional: u.isProfessional === "on",
     registroSis: u.registroSis ?? null,
     active: id ? u.active === "on" : true,
-    ...(u.password ? { passwordHash: await bcrypt.hash(u.password, 10) } : {}),
+    // Al cambiar la contraseña también se desbloquea la cuenta
+    ...(u.password ? { passwordHash: await bcrypt.hash(u.password, 10), failedLogins: 0, lockedUntil: null } : {}),
   };
 
   try {

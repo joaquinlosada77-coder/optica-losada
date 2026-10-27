@@ -8,8 +8,9 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL") // en Neon/Vercel: conexión con pool
+  directUrl = env("DATABASE_URL_UNPOOLED") // conexión directa para migraciones
 }
 
 // Empresa (titular tributario). Un despliegue puede alojar varias empresas (SaaS).
@@ -75,19 +76,21 @@ enum Role {
 }
 
 model User {
-  id               String   @id @default(cuid())
-  orgId            String   @map("org_id")
-  email            String   @unique
+  id               String    @id @default(cuid())
+  orgId            String    @map("org_id")
+  email            String    @unique
   name             String
   rut              String?
-  passwordHash     String   @map("password_hash")
+  passwordHash     String    @map("password_hash")
   role             Role
   // Optómetras/tecnólogos médicos atienden y aparecen como columnas en la agenda
-  isProfessional   Boolean  @default(false) @map("is_professional")
-  registroSis      String?  @map("registro_sis") // N° registro Superintendencia de Salud
-  dashboardWidgets String[] @default([]) @map("dashboard_widgets") // orden y selección del panel de Inicio; vacío = por defecto
-  active           Boolean  @default(true)
-  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  isProfessional   Boolean   @default(false) @map("is_professional")
+  registroSis      String?   @map("registro_sis") // N° registro Superintendencia de Salud
+  failedLogins     Int       @default(0) @map("failed_logins")
+  lockedUntil      DateTime? @map("locked_until") @db.Timestamptz(3)
+  dashboardWidgets String[]  @default([]) @map("dashboard_widgets") // orden y selección del panel de Inicio; vacío = por defecto
+  active           Boolean   @default(true)
+  createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
 
   org           Organization   @relation(fields: [orgId], references: [id])
   branches      UserBranch[]

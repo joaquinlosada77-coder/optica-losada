@@ -8,15 +8,36 @@ import { BRANCH_COOKIE, SESSION_COOKIE, sessionCookieOptions, signSession } from
 import { requireContext } from "@/server/auth";
 import type { FormState } from "@/server/form";
 
+const MAX_FAILED = 5;
+const LOCK_MINUTES = 15;
+
 export async function login(_prev: FormState, fd: FormData): Promise<FormState> {
   const email = String(fd.get("email") ?? "").trim().toLowerCase();
   const password = String(fd.get("password") ?? "");
   const next = String(fd.get("next") ?? "/");
 
   const user = await prisma.user.findUnique({ where: { email } });
+  if (user?.lockedUntil && user.lockedUntil > new Date()) {
+    const min = Math.ceil((user.lockedUntil.getTime() - Date.now()) / 60000);
+    return { error: `Demasiados intentos fallidos. Intenta de nuevo en ${min} min o pide al administrador que revise tu cuenta.` };
+  }
   // Comparamos siempre para no filtrar por tiempo si el correo existe
   const ok = await bcrypt.compare(password, user?.passwordHash ?? "$2b$10$invalidinvalidinvalidinvalidinvalidinvalidinvalidinv");
-  if (!user || !user.active || !ok) return { error: "Correo o contraseña incorrectos." };
+  if (!user || !user.active || !ok) {
+    if (user) {
+      const failed = user.failedLogins + 1;
+      await prisma.user.update({
+        where: { id: user.id },
+        data: failed >= MAX_FAILED
+          ? { failedLogins: 0, lockedUntil: new Date(Date.now() + LOCK_MINUTES * 60000) }
+          : { failedLogins: failed },
+      });
+    }
+    return { error: "Correo o contraseña incorrectos." };
+  }
+  if (user.failedLogins || user.lockedUntil) {
+    await prisma.user.update({ where: { id: user.id }, data: { failedLogins: 0, lockedUntil: null } });
+  }
 
   const jar = await cookies();
   jar.set(SESSION_COOKIE, await signSession({ uid: user.id, org: user.orgId }), sessionCookieOptions);

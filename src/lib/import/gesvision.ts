@@ -70,6 +70,9 @@ export type NormalizedRow = {
   warnings: Warning[];
 };
 
+// Largos máximos aceptados por el servidor; el texto libre se recorta antes de enviarlo
+export const LIMITS = { reason: 2000 } as const;
+
 const blank = (v: unknown) => v === null || v === undefined || (typeof v === "string" && (v.trim() === "" || v.trim().toLowerCase() === "null"));
 
 function str(v: unknown): string | null {
@@ -246,9 +249,9 @@ export function normalizeRow(r: GvRow, row: number): NormalizedRow | null {
       odSph: hasOd ? (odSph ?? 0) : null, odCyl: odCyl ?? 0, odAxis, odAdd: odAdd || null,
       oiSph: hasOi ? (oiSph ?? 0) : null, oiCyl: oiCyl ?? 0, oiAxis, oiAdd: oiAdd || null,
       ...dp,
-      avccOd, avccOi,
-      professionalName: str(r[H.tecnologo]) ? titleCase(str(r[H.tecnologo])!) : null,
-      reason: str(r[H.motivo]),
+      avccOd: avccOd?.slice(0, 20) ?? null, avccOi: avccOi?.slice(0, 20) ?? null,
+      professionalName: str(r[H.tecnologo]) ? titleCase(str(r[H.tecnologo])!).slice(0, 120) : null,
+      reason: str(r[H.motivo])?.slice(0, LIMITS.reason) ?? null,
       externalRef: `GV:${codigo ?? key}:${rawStamp(r[H.fecha])}:${values}`,
     };
   }
@@ -290,3 +293,53 @@ export const WARNING_LABEL: Record<Warning, string> = {
   dp_descartada: "Distancias pupilares inválidas descartadas",
   fecha_invalida: "Fecha de graduación inválida (no se importa la receta)",
 };
+
+export type PatientImport = NormalizedRow["patient"] & { branchSerie: string };
+export type RxImport = NonNullable<NormalizedRow["rx"]> & { patientKey: string };
+
+/**
+ * Un paciente por RUT (o código): los datos más recientes mandan y los vacíos se completan
+ * con filas anteriores. Las filas sin RUT ni código no se pueden enlazar y se omiten.
+ */
+export function groupPatients(rows: NormalizedRow[]): { patients: PatientImport[]; prescriptions: RxImport[]; skipped: number } {
+  const usable = rows.filter((r) => r.patient.rut || r.patient.externalCode);
+  const sorted = [...usable].sort((a, b) => (a.rx?.issuedAt ?? "").localeCompare(b.rx?.issuedAt ?? "") || a.row - b.row);
+  const byKey = new Map<string, PatientImport>();
+  for (const r of sorted) {
+    const merged: PatientImport = { ...(byKey.get(r.patient.key) ?? { ...r.patient, branchSerie: r.branch.serie }) };
+    for (const [k, v] of Object.entries(r.patient)) if (v !== null && v !== "") (merged as Record<string, unknown>)[k] = v;
+    merged.branchSerie = r.branch.serie;
+    byKey.set(r.patient.key, merged);
+  }
+  const seen = new Set<string>();
+  const prescriptions: RxImport[] = [];
+  for (const r of usable) {
+    if (!r.rx || seen.has(r.rx.externalRef)) continue;
+    seen.add(r.rx.externalRef);
+    prescriptions.push({ ...r.rx, patientKey: r.patient.key });
+  }
+  return { patients: [...byKey.values()], prescriptions, skipped: rows.length - usable.length };
+}
+
+export function summarizeWarnings(rows: NormalizedRow[]) {
+  const map = new Map<Warning, { count: number; sampleRows: number[] }>();
+  for (const r of rows) {
+    for (const w of new Set(r.warnings)) {
+      const e = map.get(w) ?? { count: 0, sampleRows: [] };
+      e.count++;
+      if (e.sampleRows.length < 5) e.sampleRows.push(r.row);
+      map.set(w, e);
+    }
+  }
+  return [...map.entries()].map(([type, v]) => ({ type, ...v })).sort((a, b) => b.count - a.count);
+}
+
+export function branchesOf(rows: NormalizedRow[]) {
+  const m = new Map<string, { serie: string; name: string; rows: number }>();
+  for (const r of rows) {
+    const b = m.get(r.branch.serie) ?? { ...r.branch, rows: 0 };
+    b.rows++;
+    m.set(r.branch.serie, b);
+  }
+  return [...m.values()].sort((a, b) => b.rows - a.rows);
+}

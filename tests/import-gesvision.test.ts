@@ -98,7 +98,28 @@ describe("importación Gesvision", () => {
     expect(normalizeRow({}, 5)).toBeNull();
   });
 
+  it("recorta textos libres muy largos", () => {
+    const n = normalizeRow({ ...base, "Motivo de visita": "x".repeat(5000) }, 6)!;
+    expect(n.rx!.reason).toHaveLength(2000);
+  });
+
   it("la huella es estable para reimportar sin duplicar", () => {
     expect(normalizeRow(base, 2)!.rx!.externalRef).toBe(normalizeRow(base, 99)!.rx!.externalRef);
+  });
+});
+
+describe("agrupación de pacientes", async () => {
+  const { groupPatients } = await import("@/lib/import/gesvision");
+  it("une filas del mismo RUT, completa datos y no duplica recetas", () => {
+    const a = normalizeRow({ ...base, "Email": null }, 2)!;
+    const b = normalizeRow({ ...base, "Fecha": new Date(Date.UTC(2026, 5, 1, 12, 0, 0)), "Teléfono móvil": null }, 3)!;
+    const dup = normalizeRow(base, 4)!; // misma receta repetida
+    const sinId = normalizeRow({ ...base, "NIE": null, "Código Cliente": null }, 5)!;
+    const g = groupPatients([a, b, dup, sinId]);
+    expect(g.patients).toHaveLength(1);
+    expect(g.patients[0].email).toBe("persona@ejemplo.cl");
+    expect(g.patients[0].telefono).toBe("+56 9 8765 4321");
+    expect(g.prescriptions).toHaveLength(2);
+    expect(g.skipped).toBe(1);
   });
 });
