@@ -54,3 +54,33 @@ export const REGIONES = [
   "Metropolitana de Santiago", "Libertador General Bernardo O'Higgins", "Maule", "Ñuble",
   "Biobío", "La Araucanía", "Los Ríos", "Los Lagos", "Aysén", "Magallanes y la Antártica Chilena",
 ];
+
+export const SALE_STATUS_LABEL: Record<import("@prisma/client").SaleStatus, string> = {
+  ABIERTA: "Con saldo",
+  PAGADA: "Pagada",
+  ANULADA: "Anulada",
+};
+
+export const SALE_STATUS_STYLE: Record<import("@prisma/client").SaleStatus, string> = {
+  ABIERTA: "border-amber-300 bg-amber-50 text-amber-800",
+  PAGADA: "border-emerald-300 bg-emerald-50 text-emerald-800",
+  ANULADA: "border-slate-300 bg-slate-50 text-slate-500 line-through",
+};
+
+export const PAYMENT_METHOD_LABEL: Record<import("@prisma/client").PaymentMethod, string> = {
+  EFECTIVO: "Efectivo",
+  DEBITO: "Débito",
+  CREDITO: "Crédito",
+  TRANSFERENCIA: "Transferencia",
+  OTRO: "Otro",
+};
+
+export const PRODUCT_TYPE_LABEL: Record<import("@prisma/client").ProductType, string> = {
+  ARMAZON: "Armazón",
+  CRISTAL: "Cristal",
+  LENTE_CONTACTO: "Lente de contacto",
+  LIQUIDO: "Líquido",
+  ACCESORIO: "Accesorio",
+  LENTE_SOL: "Lente de sol",
+  SERVICIO: "Servicio",
+};

@@ -5,7 +5,9 @@ import { requireContext } from "@/server/auth";
 import { patientFullName } from "@/server/queries";
 import { formatRut } from "@/lib/rut";
 import { ageFrom, fmtDateTime, todayISO } from "@/lib/time";
-import { APPT_STATUS_LABEL, APPT_STATUS_STYLE, APPT_TYPE_LABEL, PREVISION_LABEL, SEXO_LABEL } from "@/lib/labels";
+import { APPT_STATUS_LABEL, APPT_STATUS_STYLE, APPT_TYPE_LABEL, PREVISION_LABEL, SALE_STATUS_LABEL, SALE_STATUS_STYLE, SEXO_LABEL } from "@/lib/labels";
+import { fmtDiopter } from "@/lib/lenses";
+import { formatCLP } from "@/lib/money";
 import { Badge, Card, Empty, LinkButton, PageHeader } from "@/components/ui";
 
 export default async function PatientPage({ params }: { params: Promise<{ id: string }> }) {
@@ -15,6 +17,8 @@ export default async function PatientPage({ params }: { params: Promise<{ id: st
     where: { id, orgId: ctx.orgId },
     include: {
       homeBranch: { select: { name: true } },
+      prescriptions: { orderBy: [{ issuedAt: "desc" }, { createdAt: "desc" }], take: 10, include: { professional: { select: { name: true } } } },
+      sales: { orderBy: { createdAt: "desc" }, take: 20, include: { branch: { select: { name: true } } } },
       appointments: {
         orderBy: { startsAt: "desc" },
         take: 30,
@@ -50,7 +54,9 @@ export default async function PatientPage({ params }: { params: Promise<{ id: st
         actions={
           <>
             <LinkButton href={`/pacientes/${p.id}/editar`} variant="secondary">Editar</LinkButton>
-            <LinkButton href={`/agenda/nueva?fecha=${todayISO()}&patientId=${p.id}`}>Agendar cita</LinkButton>
+            <LinkButton href={`/pacientes/${p.id}/receta`} variant="secondary">+ Receta</LinkButton>
+            <LinkButton href={`/agenda/nueva?fecha=${todayISO()}&patientId=${p.id}`} variant="secondary">Agendar cita</LinkButton>
+            <LinkButton href={`/ventas/nueva?patientId=${p.id}`}>Nueva venta</LinkButton>
           </>
         }
       />
@@ -74,8 +80,46 @@ export default async function PatientPage({ params }: { params: Promise<{ id: st
           <Card title="Historial de citas">
             {past.length === 0 ? <Empty>Sin citas anteriores.</Empty> : <ApptList items={past} />}
           </Card>
-          <Card title="Ficha optométrica">
-            <Empty>Disponible en la Fase 2: anamnesis, agudeza visual, refracción, queratometría y receta.</Empty>
+          <Card title="Recetas" actions={<Link href={`/pacientes/${p.id}/receta`} className="text-sm text-brand-600 hover:underline">+ Nueva receta</Link>}>
+            {p.prescriptions.length === 0 ? <Empty>Sin recetas registradas.</Empty> : (
+              <div className="space-y-3">
+                {p.prescriptions.map((r, idx) => (
+                  <div key={r.id} className={idx === 0 ? "rounded-lg border border-brand-100 bg-brand-50/50 p-3" : "rounded-lg border border-slate-100 p-3"}>
+                    <div className="mb-1 text-xs text-slate-500">
+                      {r.issuedAt.toISOString().slice(0, 10).split("-").reverse().join("-")} · {r.professional?.name ?? "Receta externa"}{idx === 0 && " · vigente"}
+                    </div>
+                    <table className="font-mono text-sm">
+                      <tbody>
+                        {([["OD", r.odSph, r.odCyl, r.odAxis, r.odAdd, r.dpOd], ["OI", r.oiSph, r.oiCyl, r.oiAxis, r.oiAdd, r.dpOi]] as const).map(([eye, sph, cyl, ax, add, dp]) => (
+                          <tr key={eye}>
+                            <td className="pr-3 font-sans font-semibold">{eye}</td>
+                            <td className="pr-3">{fmtDiopter(sph)}</td>
+                            <td className="pr-3">{cyl ? `${fmtDiopter(cyl)} x ${ax}°` : ""}</td>
+                            <td className="pr-3">{add ? `Add ${fmtDiopter(add)}` : ""}</td>
+                            <td className="text-slate-500">{dp ? `DP ${String(dp).replace(".", ",")}` : ""}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                    {r.notes && <p className="mt-1 text-xs text-slate-600">{r.notes}</p>}
+                  </div>
+                ))}
+              </div>
+            )}
+          </Card>
+          <Card title="Compras">
+            {p.sales.length === 0 ? <Empty>Sin compras.</Empty> : (
+              <ul className="divide-y divide-slate-100 text-sm">
+                {p.sales.map((s) => (
+                  <li key={s.id} className="flex flex-wrap items-center gap-3 py-2.5">
+                    <Link href={`/ventas/${s.id}`} className="w-44 font-medium hover:underline">Venta {s.number} · {s.branch.name}</Link>
+                    <span className="flex-1 text-slate-600">{fmtDateTime(s.createdAt)}</span>
+                    <span className="tabular-nums">{formatCLP(s.total)}</span>
+                    <Badge className={SALE_STATUS_STYLE[s.status]}>{s.status === "ABIERTA" ? `Saldo ${formatCLP(s.total - s.paid)}` : SALE_STATUS_LABEL[s.status]}</Badge>
+                  </li>
+                ))}
+              </ul>
+            )}
           </Card>
         </div>
       </div>

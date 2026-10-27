@@ -8,8 +8,10 @@ const prisma = new PrismaClient();
 const rut = (n: number) => `${n}-${computeDv(n)}`;
 
 async function main() {
-  if (await prisma.organization.findFirst()) {
-    console.log("La base ya tiene datos; seed omitido.");
+  const existing = await prisma.organization.findFirst();
+  if (existing) {
+    await seedSalesCatalog(existing.id);
+    console.log("La base ya tenía datos; solo se completó el catálogo de ventas si faltaba.");
     return;
   }
   const org = await prisma.organization.create({
@@ -70,7 +72,96 @@ async function main() {
   await appt(centro.id, null, 3, "12:00", 15, "AGENDADA", "ENTREGA_LENTES");
   await appt(provi.id, tm1.id, 4, "16:00", 40, "CONFIRMADA");
 
+  await seedSalesCatalog(org.id);
   console.log("Seed OK. Usuarios (clave optica123): admin@optica.cl, tm@optica.cl, tm2@optica.cl, recepcion@optica.cl");
+}
+
+// Catálogo de ventas y configurador de cristales (precios referenciales CLP con IVA)
+async function seedSalesCatalog(orgId: string) {
+  if (await prisma.lensMaterial.count({ where: { orgId } })) return;
+
+  const materials = await Promise.all(
+    ([
+      ["CR39", "Orgánico CR-39", "1.50", "Excelente calidad óptica a buen precio. Ideal para graduaciones bajas.", 1, 0, 4, 10],
+      ["POLI", "Policarbonato", "1.59", "Resiste impactos: ideal para niños y deporte. Más delgado que el CR-39.", 2, 2, 6, 20],
+      ["161", "Alto índice 1.61", "1.61", "Hasta 25% más delgado y liviano.", 3, 3, 7, 30],
+      ["167", "Alto índice 1.67", "1.67", "Hasta 35% más delgado. Recomendado desde ±4,50.", 4, 4.5, 10, 40],
+      ["174", "Ultra delgado 1.74", "1.74", "El más delgado disponible, para graduaciones altas.", 5, 7, 14, 50],
+    ] as const).map(([code, name, refractiveIndex, description, thinness, recommendFromPower, maxPower, sortOrder]) =>
+      prisma.lensMaterial.create({ data: { orgId, code, name, refractiveIndex, description, thinness, recommendFromPower, maxPower, sortOrder } }),
+    ),
+  );
+  const designs = await Promise.all(
+    ([
+      ["MONO", "Monofocal", "Una sola graduación: lejos o cerca.", false, 10],
+      ["BIF", "Bifocal", "Lejos y cerca, con línea visible.", true, 20],
+      ["PROG", "Progresivo", "Lejos, intermedio y cerca sin líneas.", true, 30],
+      ["OCUP", "Ocupacional", "Para computador y oficina: intermedio y cerca.", true, 40],
+    ] as const).map(([code, name, description, requiresAdd, sortOrder]) =>
+      prisma.lensDesign.create({ data: { orgId, code, name, description, requiresAdd, sortOrder } }),
+    ),
+  );
+  await prisma.lensTreatment.createMany({
+    data: ([
+      ["AR", "Antirreflejo", "Elimina reflejos y mejora la visión nocturna.", 25000, 10],
+      ["BLUE", "Filtro luz azul", "Protege de pantallas y reduce la fatiga visual.", 30000, 20],
+      ["FOTO", "Fotocromático", "Se oscurece al sol y se aclara en interiores.", 45000, 30],
+      ["POL", "Polarizado", "Elimina el encandilamiento: ideal para conducir.", 50000, 40],
+      ["END", "Endurecido", "Mayor resistencia a rayas.", 10000, 50],
+    ] as const).map(([code, name, description, price, sortOrder]) => ({ orgId, code, name, description, price, sortOrder })),
+  });
+  const matrix: Record<string, (number | null)[]> = {
+    CR39: [25000, 60000, 120000, 90000],
+    POLI: [45000, 80000, 150000, 110000],
+    "161": [70000, null, 190000, 140000],
+    "167": [110000, null, 250000, 180000],
+    "174": [180000, null, 350000, null],
+  };
+  await prisma.lensPrice.createMany({
+    data: materials.flatMap((m) =>
+      designs.flatMap((d, i) => (matrix[m.code][i] === null ? [] : [{ materialId: m.id, designId: d.id, price: matrix[m.code][i]! }])),
+    ),
+  });
+
+  await prisma.product.createMany({
+    data: ([
+      ["RB5154", "Ray-Ban Clubmaster RB5154", "Ray-Ban", "ARMAZON", 89990, true],
+      ["VO5286", "Vogue VO5286", "Vogue", "ARMAZON", 69990, true],
+      ["GEN-MET", "Armazón metálico", "Genérico", "ARMAZON", 29990, true],
+      ["INF-FLEX", "Armazón infantil flexible", "Genérico", "ARMAZON", 34990, false],
+      ["RB3025", "Ray-Ban Aviator RB3025", "Ray-Ban", "LENTE_SOL", 129990, false],
+      ["OASIS6", "Acuvue Oasis (caja 6)", "Johnson & Johnson", "LENTE_CONTACTO", 32990, true],
+      ["AIROPT6", "Air Optix Aqua (caja 6)", "Alcon", "LENTE_CONTACTO", 29990, false],
+      ["OPTIF300", "Opti-Free PureMoist 300 ml", "Alcon", "LIQUIDO", 12990, true],
+      ["RENU355", "ReNu MultiPlus 355 ml", "Bausch + Lomb", "LIQUIDO", 9990, false],
+      ["ESTUCHE", "Estuche rígido", null, "ACCESORIO", 4990, true],
+      ["PANO", "Paño microfibra", null, "ACCESORIO", 1990, false],
+      ["CORDON", "Cordón para lentes", null, "ACCESORIO", 2990, false],
+      ["EXAMEN", "Examen visual", null, "SERVICIO", 15000, true],
+      ["AJUSTE", "Ajuste / reparación", null, "SERVICIO", 5000, false],
+    ] as const).map(([sku, name, brand, type, price, favorite]) => ({ orgId, sku, name, brand, type, price, favorite })),
+  });
+
+  // Recetas de ejemplo para los pacientes demo
+  const pro = await prisma.user.findFirst({ where: { orgId, isProfessional: true } });
+  const byRut = async (n: number) => prisma.patient.findFirst({ where: { orgId, rut: rut(n) } });
+  const rxs: [number, Partial<Record<string, number>>][] = [
+    [15678234, { odSph: -2.25, odCyl: -0.75, odAxis: 180, oiSph: -2, oiCyl: -0.5, oiAxis: 170 }],
+    [9876543, { odSph: 1.5, odAdd: 2, oiSph: 1.75, oiAdd: 2 }],
+    [20123456, { odSph: -5.5, odCyl: -1, odAxis: 10, oiSph: -5, oiCyl: -0.75, oiAxis: 175 }],
+    [12345678, { odSph: -0.75, oiSph: -0.5 }],
+  ];
+  for (const [n, r] of rxs) {
+    const p = await byRut(n);
+    if (!p || !pro) continue;
+    await prisma.prescription.create({
+      data: {
+        orgId, patientId: p.id, professionalId: pro.id, createdById: pro.id, issuedAt: new Date(`${todayISO()}T00:00:00Z`),
+        odSph: r.odSph!, odCyl: r.odCyl ?? 0, odAxis: r.odAxis ?? null, odAdd: r.odAdd ?? null,
+        oiSph: r.oiSph!, oiCyl: r.oiCyl ?? 0, oiAxis: r.oiAxis ?? null, oiAdd: r.oiAdd ?? null, dpOd: 31.5, dpOi: 31,
+      },
+    });
+  }
 }
 
 main().finally(() => prisma.$disconnect());

@@ -30,8 +30,9 @@ Scripts: `npm test` (unitarias), `npm run typecheck`, `npm run lint`, `npm run b
 | Multi-tienda / multi-empresa, entorno unificado | `Organization` → `Branch`, selector de sucursal, permisos por sucursal | **1 ✅** |
 | Gestión de pacientes / clientes | Pacientes con RUT, previsión (Fonasa/Isapre), consentimiento | **1 ✅** |
 | Agenda / citas | Agenda diaria por profesional, estados, anti doble reserva | **1 ✅** |
-| Gestión clínica: historial, optometría, contactología (audiología) | Ficha optométrica, receta firmada | 2 |
-| TPV + facturación (allí AEAT/Verifactu) | TPV + boleta/factura electrónica **SII** vía proveedor API | 3–4 |
+| Gestión clínica: historial, optometría, contactología (audiología) | **Receta ✅**; resto de la ficha optométrica | 2 (parcial) |
+| TPV, caja, abonos | **Venta táctil, configurador de cristales, abonos, caja ✅** | **3 ✅** |
+| Facturación (allí AEAT/Verifactu) | Boleta/factura electrónica **SII** vía proveedor API | 4 |
 | Pedidos de lentes, proveedores, recepción de albaranes | Órdenes de laboratorio, guías de despacho | 5 |
 | Catálogos integrados, stock multi-sucursal | Inventario, traspasos entre sucursales | 6 |
 | CRM, recordatorios, informe visual por email | Campañas, recordatorios WhatsApp/email, fidelización | 7 |
@@ -52,6 +53,23 @@ Scripts: `npm test` (unitarias), `npm run typecheck`, `npm run lint`, `npm run b
 - **Horario de Chile**: todo se guarda en UTC (`timestamptz`) y se convierte con `America/Santiago`
   (cambios de horario incluidos).
 - **Auditoría**: `audit_logs` registra creación/edición de pacientes, citas, sucursales y usuarios.
+
+## Venta táctil y configurador de cristales (Fase 3, adelantada)
+
+Pensado para tablet o pantalla touch, mostrando la pantalla al cliente:
+
+- **Configurador de cristales** en tres pasos (material → filtros y tratamientos → tipo de cristal).
+  Con la receta del paciente bloquea los materiales que no se fabrican para esa graduación, marca el
+  índice recomendado y deshabilita bifocal/progresivo si no hay adición. Genera el código
+  (`167-MONO-AR-BLUE`) y el precio del par. Precios y opciones en *Configuración → Cristales*.
+- **Punto de venta**: productos en botones grandes por categoría, ítem libre, descuentos por línea o
+  generales (monto o %), fecha de entrega, teclado numérico en pantalla.
+- **Cobro**: varios medios de pago en una venta, vuelto en efectivo, **abonos** con saldo pendiente
+  que se puede pagar después en cualquier sucursal.
+- **Caja** por sucursal: apertura con fondo, resumen por medio de pago, cierre con cuadratura
+  (una sola caja abierta por sucursal, garantizado en la base de datos).
+- Los precios siempre se recalculan en el servidor; la venta guarda la receta usada para el laboratorio.
+- **Receta** en la ficha del paciente (OD/OI, esfera, cilindro, eje, adición, DP) con validación de pasos de 0,25.
 
 ### Estructura
 
@@ -82,6 +100,8 @@ tests/                      Vitest (RUT, zona horaria, agenda)
 ## Pendientes conocidos de Fase 1
 
 - Navegación móvil (la barra lateral se oculta bajo 768 px; falta menú hamburguesa).
+- Descontar stock en la venta (llega con el módulo de inventario).
+- Emisión de boleta/factura SII desde la venta (Fase 4).
 - Vista semanal de agenda y bloqueos de horario (vacaciones, colación).
 - Recuperación de contraseña y límite de intentos de login.
 - Recordatorios automáticos de cita (quedan para CRM).

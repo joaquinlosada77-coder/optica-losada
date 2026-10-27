@@ -10,12 +10,15 @@ const ITEMS: Item[] = [
   { href: "/", label: "Inicio", icon: "⌂" },
   { href: "/agenda", label: "Agenda", icon: "◷" },
   { href: "/pacientes", label: "Pacientes", icon: "☺" },
-  { href: "#ficha", label: "Ficha optométrica", icon: "◎", soon: true },
-  { href: "#tpv", label: "Ventas / TPV", icon: "$", soon: true },
+  { href: "/ventas/nueva", label: "Vender", icon: "$" },
+  { href: "/ventas", label: "Ventas", icon: "≡" },
+  { href: "/caja", label: "Caja", icon: "▣" },
+  { href: "/productos", label: "Productos", icon: "▦" },
   { href: "#dte", label: "Boletas y facturas", icon: "▤", soon: true },
   { href: "#lab", label: "Laboratorio", icon: "⚗", soon: true },
-  { href: "#stock", label: "Inventario", icon: "▦", soon: true },
+  { href: "#stock", label: "Inventario", icon: "▤", soon: true },
   { href: "#crm", label: "CRM", icon: "✉", soon: true },
+  { href: "/configuracion/cristales", label: "Cristales", icon: "◎", adminOnly: true },
   { href: "/configuracion/sucursales", label: "Sucursales", icon: "⌖", adminOnly: true },
   { href: "/configuracion/usuarios", label: "Usuarios", icon: "⚇", adminOnly: true },
 ];
@@ -25,7 +28,8 @@ export function Nav({ isAdmin }: { isAdmin: boolean }) {
   return (
     <nav className="flex flex-col gap-0.5 text-sm">
       {ITEMS.filter((i) => !i.adminOnly || isAdmin).map((i) => {
-        const active = i.href === "/" ? path === "/" : path.startsWith(i.href);
+        const active =
+          i.href === "/" || i.href === "/ventas" ? path === i.href || (i.href === "/ventas" && /^\/ventas\/(?!nueva)/.test(path)) : path.startsWith(i.href);
         if (i.soon) {
           return (
             <span key={i.href} className="flex cursor-default items-center gap-3 rounded-lg px-3 py-2 text-slate-400" title="Próxima fase">

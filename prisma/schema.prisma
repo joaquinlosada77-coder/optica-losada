@@ -1,4 +1,5 @@
 // Fase 1: empresa, sucursales, usuarios, pacientes (RUT) y agenda.
+// Fase 3 (adelantada): catálogo, ventas táctiles, abonos y caja.
 // Las fases siguientes (ficha optométrica, TPV, DTE SII, laboratorio, stock, CRM)
 // cuelgan de Organization / Branch / Patient.
 
@@ -20,36 +21,46 @@ model Organization {
   giro        String?
   createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
 
-  branches     Branch[]
-  users        User[]
-  patients     Patient[]
-  appointments Appointment[]
-  auditLogs    AuditLog[]
+  branches       Branch[]
+  users          User[]
+  patients       Patient[]
+  appointments   Appointment[]
+  auditLogs      AuditLog[]
+  products       Product[]
+  sales          Sale[]
+  prescriptions  Prescription[]
+  lensMaterials  LensMaterial[]
+  lensDesigns    LensDesign[]
+  lensTreatments LensTreatment[]
 
   @@map("organizations")
 }
 
 model Branch {
-  id        String   @id @default(cuid())
-  orgId     String   @map("org_id")
-  code      String // código interno corto, p.ej. "PROV" (útil para folios/series)
-  name      String
-  address   String?
-  comuna    String?
-  region    String?
-  phone     String?
-  email     String?
+  id          String   @id @default(cuid())
+  orgId       String   @map("org_id")
+  code        String // código interno corto, p.ej. "PROV" (útil para folios/series)
+  name        String
+  address     String?
+  comuna      String?
+  region      String?
+  phone       String?
+  email       String?
   // Horario base de agenda (hora local Chile, "HH:mm")
-  openTime  String   @default("10:00") @map("open_time")
-  closeTime String   @default("19:00") @map("close_time")
-  slotMinutes Int    @default(30) @map("slot_minutes")
-  active    Boolean  @default(true)
-  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  openTime    String   @default("10:00") @map("open_time")
+  closeTime   String   @default("19:00") @map("close_time")
+  slotMinutes Int      @default(30) @map("slot_minutes")
+  saleSeq     Int      @default(0) @map("sale_seq") // último correlativo de venta emitido
+  active      Boolean  @default(true)
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
 
-  org          Organization @relation(fields: [orgId], references: [id])
+  org          Organization  @relation(fields: [orgId], references: [id])
   users        UserBranch[]
   homePatients Patient[]
   appointments Appointment[]
+  sales        Sale[]
+  cashSessions CashSession[]
+  payments     Payment[]
 
   @@unique([orgId, code])
   @@index([orgId])
@@ -64,24 +75,29 @@ enum Role {
 }
 
 model User {
-  id           String   @id @default(cuid())
-  orgId        String   @map("org_id")
-  email        String   @unique
-  name         String
-  rut          String?
-  passwordHash String   @map("password_hash")
-  role         Role
+  id             String   @id @default(cuid())
+  orgId          String   @map("org_id")
+  email          String   @unique
+  name           String
+  rut            String?
+  passwordHash   String   @map("password_hash")
+  role           Role
   // Optómetras/tecnólogos médicos atienden y aparecen como columnas en la agenda
-  isProfessional Boolean @default(false) @map("is_professional")
-  registroSis  String?  @map("registro_sis") // N° registro Superintendencia de Salud
-  active       Boolean  @default(true)
-  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  isProfessional Boolean  @default(false) @map("is_professional")
+  registroSis    String?  @map("registro_sis") // N° registro Superintendencia de Salud
+  active         Boolean  @default(true)
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
 
-  org          Organization  @relation(fields: [orgId], references: [id])
-  branches     UserBranch[]
-  appointments Appointment[] @relation("ProfessionalAppointments")
-  createdAppts Appointment[] @relation("CreatedAppointments")
-  auditLogs    AuditLog[]
+  org           Organization   @relation(fields: [orgId], references: [id])
+  branches      UserBranch[]
+  appointments  Appointment[]  @relation("ProfessionalAppointments")
+  createdAppts  Appointment[]  @relation("CreatedAppointments")
+  auditLogs     AuditLog[]
+  sales         Sale[]
+  payments      Payment[]
+  cashOpened    CashSession[]  @relation("CashOpenedBy")
+  cashClosed    CashSession[]  @relation("CashClosedBy")
+  prescriptions Prescription[] @relation("PrescriptionProfessional")
 
   @@index([orgId])
   @@map("users")
@@ -117,33 +133,35 @@ enum Prevision {
 // El paciente pertenece a la empresa (compartido entre sucursales);
 // homeBranch indica dónde se registró / atiende habitualmente.
 model Patient {
-  id              String     @id @default(cuid())
-  orgId           String     @map("org_id")
-  homeBranchId    String?    @map("home_branch_id")
-  rut             String? // normalizado "12345678-K"; null si es extranjero sin RUT
-  documentoExtranjero String? @map("documento_extranjero") // pasaporte u otro
-  nombres         String
-  apellidoPaterno String     @map("apellido_paterno")
-  apellidoMaterno String?    @map("apellido_materno")
-  fechaNacimiento DateTime?  @map("fecha_nacimiento") @db.Date
-  sexo            Sexo?
-  email           String?
-  telefono        String?
-  direccion       String?
-  comuna          String?
-  region          String?
-  prevision       Prevision?
-  isapre          String?
-  ocupacion       String?
-  notas           String?
-  aceptaMarketing Boolean    @default(false) @map("acepta_marketing") // Ley 19.628
-  active          Boolean    @default(true)
-  createdAt       DateTime   @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt       DateTime   @updatedAt @map("updated_at") @db.Timestamptz(3)
+  id                  String     @id @default(cuid())
+  orgId               String     @map("org_id")
+  homeBranchId        String?    @map("home_branch_id")
+  rut                 String? // normalizado "12345678-K"; null si es extranjero sin RUT
+  documentoExtranjero String?    @map("documento_extranjero") // pasaporte u otro
+  nombres             String
+  apellidoPaterno     String     @map("apellido_paterno")
+  apellidoMaterno     String?    @map("apellido_materno")
+  fechaNacimiento     DateTime?  @map("fecha_nacimiento") @db.Date
+  sexo                Sexo?
+  email               String?
+  telefono            String?
+  direccion           String?
+  comuna              String?
+  region              String?
+  prevision           Prevision?
+  isapre              String?
+  ocupacion           String?
+  notas               String?
+  aceptaMarketing     Boolean    @default(false) @map("acepta_marketing") // Ley 19.628
+  active              Boolean    @default(true)
+  createdAt           DateTime   @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt           DateTime   @updatedAt @map("updated_at") @db.Timestamptz(3)
 
-  org          Organization  @relation(fields: [orgId], references: [id])
-  homeBranch   Branch?       @relation(fields: [homeBranchId], references: [id])
-  appointments Appointment[]
+  org           Organization   @relation(fields: [orgId], references: [id])
+  homeBranch    Branch?        @relation(fields: [homeBranchId], references: [id])
+  appointments  Appointment[]
+  sales         Sale[]
+  prescriptions Prescription[]
 
   @@unique([orgId, rut])
   @@index([orgId, apellidoPaterno])
@@ -212,4 +230,244 @@ model AuditLog {
 
   @@index([orgId, entity, entityId])
   @@map("audit_logs")
+}
+
+// ───────────────────────── Ventas (TPV táctil) ─────────────────────────
+// Montos en pesos chilenos (enteros) con IVA incluido, como se cobra en mesón.
+
+enum ProductType {
+  ARMAZON
+  CRISTAL
+  LENTE_CONTACTO
+  LIQUIDO // soluciones para LC
+  ACCESORIO
+  LENTE_SOL
+  SERVICIO // examen, reparación, ajuste
+}
+
+model Product {
+  id        String      @id @default(cuid())
+  orgId     String      @map("org_id")
+  sku       String
+  name      String
+  brand     String?
+  type      ProductType
+  price     Int // CLP, IVA incluido
+  favorite  Boolean     @default(false) // aparece en la pestaña "Frecuentes" del TPV
+  active    Boolean     @default(true)
+  createdAt DateTime    @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  org   Organization @relation(fields: [orgId], references: [id])
+  items SaleItem[]
+
+  @@unique([orgId, sku])
+  @@index([orgId, type])
+  @@map("products")
+}
+
+enum SaleStatus {
+  ABIERTA // con saldo pendiente (abono)
+  PAGADA
+  ANULADA
+}
+
+model Sale {
+  id           String     @id @default(cuid())
+  orgId        String     @map("org_id")
+  branchId     String     @map("branch_id")
+  number       Int // correlativo por sucursal
+  patientId    String?    @map("patient_id")
+  sellerId     String     @map("seller_id")
+  status       SaleStatus
+  subtotal     Int // suma de líneas
+  discount     Int        @default(0) // descuento global
+  total        Int
+  paid         Int        @default(0)
+  deliveryDate DateTime?  @map("delivery_date") @db.Date // fecha promesa de entrega
+  notes        String?
+  voidReason   String?    @map("void_reason")
+  createdAt    DateTime   @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt    DateTime   @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  org      Organization @relation(fields: [orgId], references: [id])
+  branch   Branch       @relation(fields: [branchId], references: [id])
+  patient  Patient?     @relation(fields: [patientId], references: [id])
+  seller   User         @relation(fields: [sellerId], references: [id])
+  items    SaleItem[]
+  payments Payment[]
+
+  @@unique([branchId, number])
+  @@index([orgId, createdAt])
+  @@index([patientId])
+  @@map("sales")
+}
+
+model SaleItem {
+  id          String  @id @default(cuid())
+  saleId      String  @map("sale_id")
+  productId   String? @map("product_id") // null = ítem libre o cristal configurado
+  code        String? // SKU o código generado del cristal (p.ej. 167-PROG-AR-BLUE)
+  lensConfig  Json?   @map("lens_config") // material/diseño/tratamientos + receta usada (para laboratorio)
+  description String
+  quantity    Int
+  unitPrice   Int     @map("unit_price")
+  discount    Int     @default(0) // descuento de la línea (monto)
+  total       Int
+
+  sale    Sale     @relation(fields: [saleId], references: [id], onDelete: Cascade)
+  product Product? @relation(fields: [productId], references: [id])
+
+  @@map("sale_items")
+}
+
+enum PaymentMethod {
+  EFECTIVO
+  DEBITO
+  CREDITO
+  TRANSFERENCIA
+  OTRO
+}
+
+// Cada pago/abono queda en la caja abierta de la sucursal donde se cobró
+// (puede ser distinta de la sucursal de la venta).
+model Payment {
+  id            String        @id @default(cuid())
+  saleId        String        @map("sale_id")
+  branchId      String        @map("branch_id")
+  cashSessionId String        @map("cash_session_id")
+  userId        String        @map("user_id")
+  method        PaymentMethod
+  amount        Int
+  reference     String? // n° operación / voucher
+  voided        Boolean       @default(false)
+  createdAt     DateTime      @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  sale        Sale        @relation(fields: [saleId], references: [id])
+  branch      Branch      @relation(fields: [branchId], references: [id])
+  cashSession CashSession @relation(fields: [cashSessionId], references: [id])
+  user        User        @relation(fields: [userId], references: [id])
+
+  @@index([cashSessionId])
+  @@map("payments")
+}
+
+model CashSession {
+  id            String    @id @default(cuid())
+  branchId      String    @map("branch_id")
+  openedById    String    @map("opened_by_id")
+  openedAt      DateTime  @default(now()) @map("opened_at") @db.Timestamptz(3)
+  openingAmount Int       @map("opening_amount") // fondo de caja
+  closedById    String?   @map("closed_by_id")
+  closedAt      DateTime? @map("closed_at") @db.Timestamptz(3)
+  countedCash   Int?      @map("counted_cash") // efectivo contado al cierre
+  expectedCash  Int?      @map("expected_cash")
+  notes         String?
+
+  branch   Branch    @relation(fields: [branchId], references: [id])
+  openedBy User      @relation("CashOpenedBy", fields: [openedById], references: [id])
+  closedBy User?     @relation("CashClosedBy", fields: [closedById], references: [id])
+  payments Payment[]
+
+  @@index([branchId, openedAt])
+  @@map("cash_sessions")
+}
+
+// ───────────────────────── Receta y configurador de cristales ─────────────────────────
+
+// Receta óptica (núcleo de la ficha optométrica). Valores en dioptrías, pasos de 0,25.
+model Prescription {
+  id             String   @id @default(cuid())
+  orgId          String   @map("org_id")
+  patientId      String   @map("patient_id")
+  professionalId String?  @map("professional_id")
+  issuedAt       DateTime @map("issued_at") @db.Date
+  odSph          Float    @map("od_sph")
+  odCyl          Float    @default(0) @map("od_cyl")
+  odAxis         Int?     @map("od_axis")
+  odAdd          Float?   @map("od_add")
+  oiSph          Float    @map("oi_sph")
+  oiCyl          Float    @default(0) @map("oi_cyl")
+  oiAxis         Int?     @map("oi_axis")
+  oiAdd          Float?   @map("oi_add")
+  dpOd           Float?   @map("dp_od") // distancia pupilar monocular (mm)
+  dpOi           Float?   @map("dp_oi")
+  notes          String?
+  createdById    String   @map("created_by_id")
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  org          Organization @relation(fields: [orgId], references: [id])
+  patient      Patient      @relation(fields: [patientId], references: [id])
+  professional User?        @relation("PrescriptionProfessional", fields: [professionalId], references: [id])
+
+  @@index([patientId, issuedAt])
+  @@map("prescriptions")
+}
+
+// Material / índice de refracción (CR-39 1.50, policarbonato 1.59, 1.61, 1.67, 1.74…)
+model LensMaterial {
+  id                 String  @id @default(cuid())
+  orgId              String  @map("org_id")
+  code               String // parte del código generado, p.ej. "167"
+  name               String // "Alto índice 1.67"
+  refractiveIndex    String  @map("refractive_index") // "1.67"
+  description        String? // argumento de venta que ve el cliente
+  thinness           Int     @default(1) // 1..5 para el dibujo de grosor
+  recommendFromPower Float   @default(0) @map("recommend_from_power") // se sugiere desde esta potencia
+  maxPower           Float   @default(20) @map("max_power") // potencia máxima fabricable
+  sortOrder          Int     @default(0) @map("sort_order")
+  active             Boolean @default(true)
+
+  org    Organization @relation(fields: [orgId], references: [id])
+  prices LensPrice[]
+
+  @@unique([orgId, code])
+  @@map("lens_materials")
+}
+
+// Tipo / diseño: monofocal, bifocal, progresivo, ocupacional
+model LensDesign {
+  id          String  @id @default(cuid())
+  orgId       String  @map("org_id")
+  code        String
+  name        String
+  description String?
+  requiresAdd Boolean @default(false) @map("requires_add") // necesita adición en la receta
+  sortOrder   Int     @default(0) @map("sort_order")
+  active      Boolean @default(true)
+
+  org    Organization @relation(fields: [orgId], references: [id])
+  prices LensPrice[]
+
+  @@unique([orgId, code])
+  @@map("lens_designs")
+}
+
+// Filtros y tratamientos con recargo fijo por par
+model LensTreatment {
+  id          String  @id @default(cuid())
+  orgId       String  @map("org_id")
+  code        String
+  name        String
+  description String?
+  price       Int // recargo por par, CLP IVA incluido
+  sortOrder   Int     @default(0) @map("sort_order")
+  active      Boolean @default(true)
+
+  org Organization @relation(fields: [orgId], references: [id])
+
+  @@unique([orgId, code])
+  @@map("lens_treatments")
+}
+
+// Precio base del par según material × diseño (sin fila = combinación no disponible)
+model LensPrice {
+  materialId String @map("material_id")
+  designId   String @map("design_id")
+  price      Int
+
+  material LensMaterial @relation(fields: [materialId], references: [id], onDelete: Cascade)
+  design   LensDesign   @relation(fields: [designId], references: [id], onDelete: Cascade)
+
+  @@id([materialId, designId])
+  @@map("lens_prices")
 }

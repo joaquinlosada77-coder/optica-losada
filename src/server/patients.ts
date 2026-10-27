@@ -85,7 +85,7 @@ export async function createPatient(_prev: FormState, fd: FormData): Promise<For
   revalidatePath("/pacientes");
 
   const returnTo = fd.get("returnTo");
-  if (typeof returnTo === "string" && returnTo.startsWith("/agenda/nueva")) {
+  if (typeof returnTo === "string" && (returnTo.startsWith("/agenda/nueva") || returnTo.startsWith("/ventas/nueva"))) {
     redirect(`${returnTo}${returnTo.includes("?") ? "&" : "?"}patientId=${id}`);
   }
   redirect(`/pacientes/${id}`);
